@@ -63,6 +63,8 @@ html,body{height:100%;font-family:'Outfit',sans-serif;background:var(--black);co
 
 /* PANEL */
 .panel{width:380px;flex-shrink:0;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;z-index:10}
+/* On mobile, panel stacks below map and is scrollable */
+@media(max-width:900px){.panel{overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:45vh}}
 
 @media(max-width:900px){
   .app{flex-direction:column}
@@ -533,9 +535,19 @@ function renderAll(){
 // ─── REALTIME ─────────────────────────────────────────────────────────────────
 let bc2;
 try{bc2=new BroadcastChannel('oau_transit');bc2.onmessage=()=>renderAll();}catch(e){}
+
+// Subscribe to Supabase Realtime (re-fetches fresh data before rendering)
 subscribeRealtime(renderAll);
-setInterval(renderAll,3000);
-renderAll();
+
+// Polling fallback: re-fetch from Supabase every 5s
+async function pollAndRender() {
+  await syncFromSupabase();
+  renderAll();
+}
+setInterval(pollAndRender, 5000);
+
+// Initial load: sync from Supabase first, then render
+syncFromSupabase(renderAll);
 </script>
 <script src="pwa.js"></script>
 </body>
