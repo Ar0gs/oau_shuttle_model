@@ -307,36 +307,48 @@
     let pill = document.getElementById('pwa-offline-pill');
     if (!pill) pill = createOfflinePill();
 
+    // Probe with CDN URLs we already load — no-cors so CORS never blocks us.
+    // Any response (even opaque) means the network is reachable.
     async function probeNetwork() {
-      try {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 3000);
-        await fetch('https://www.gstatic.com/generate_204', {
-          method: 'HEAD', mode: 'no-cors', cache: 'no-store', signal: ctrl.signal
-        });
-        clearTimeout(t);
-        return true;
-      } catch { return false; }
+      const candidates = [
+        'https://cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js',
+        'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+      ];
+      for (const url of candidates) {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 4000);
+          await fetch(url, { method: 'HEAD', mode: 'no-cors', cache: 'no-store', signal: ctrl.signal });
+          clearTimeout(t);
+          return true;
+        } catch { /* try next */ }
+      }
+      return false;
     }
 
-    async function update(probe = false) {
-      if (!navigator.onLine) { pill.classList.add('visible'); return; }
-      if (probe) {
-        const online = await probeNetwork();
-        if (online) {
-          pill.classList.remove('visible');
-          if (typeof syncFromSupabase === 'function') syncFromSupabase();
-        } else { pill.classList.add('visible'); }
-      } else { pill.classList.remove('visible'); }
+    function showOnline() {
+      pill.classList.remove('visible');
+      if (typeof syncFromSupabase === 'function') syncFromSupabase();
     }
 
-    window.addEventListener('online', () => {
-      update(true);
+    window.addEventListener('online', async () => {
+      if (await probeNetwork()) showOnline();
       if (swRegistration?.sync) swRegistration.sync.register('sync-ride-requests').catch(() => {});
     });
-    window.addEventListener('offline', () => update(false));
-    // Only show on load if browser already knows we're offline
-    if (!navigator.onLine) pill.classList.add('visible');
+    window.addEventListener('offline', () => pill.classList.add('visible'));
+
+    // On page load: ONLY show pill if browser is 100% certain we are offline.
+    // Do NOT probe immediately — it causes false positives while the network
+    // stack is still initialising (common on localhost, file://, and mobile cold-starts).
+    // Instead do a single quiet probe after 4 s; only show pill if that fails too.
+    if (navigator.onLine === false) {
+      pill.classList.add('visible');
+    } else {
+      setTimeout(async () => {
+        // pill is hidden by default; only show it if probe definitively fails
+        if (!(await probeNetwork())) pill.classList.add('visible');
+      }, 4000);
+    }
   }
 
   // ── Service Worker Registration ────────────────────────────────────────────
