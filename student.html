@@ -67,8 +67,10 @@ html,body{height:100%;font-family:'Outfit',sans-serif;background:var(--black);co
 
 /* MOBILE: bottom sheet */
 @media(max-width:767px){
-  .panel{left:0;right:0;bottom:0;border-radius:20px 20px 0 0;border-bottom:none;overflow:hidden;transform:translateY(calc(100% - var(--sheet-peek) - 56px))}
+  .panel{left:0;right:0;bottom:0;border-radius:20px 20px 0 0;border-bottom:none;overflow:hidden;transform:translateY(calc(100% - var(--sheet-peek) - 56px));max-height:calc(100dvh - var(--topbar))}
   .panel.expanded{transform:translateY(0)}
+  /* When expanded, allow panel-inner to scroll */
+  .panel.expanded .panel-inner{overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100dvh - var(--topbar) - 80px);padding-bottom:env(safe-area-inset-bottom,24px)}
   #map{bottom:calc(var(--sheet-peek) + 56px)}
 }
 
@@ -722,9 +724,19 @@ try {
   bc2.onmessage = () => renderAll();
 } catch(e){}
 
+// Subscribe to Supabase Realtime (re-fetches fresh data before rendering)
 subscribeRealtime(renderAll);
-setInterval(renderAll, 4000);
-renderAll();
+
+// Polling fallback: re-fetch from Supabase every 5s so data stays live
+// even if Realtime websocket isn't available (e.g. firewall, proxy)
+async function pollAndRender() {
+  await syncFromSupabase();
+  renderAll();
+}
+setInterval(pollAndRender, 5000);
+
+// Initial load: sync from Supabase first, then render
+syncFromSupabase(renderAll);
 </script>
 <script src="pwa.js"></script>
 </body>
