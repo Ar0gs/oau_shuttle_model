@@ -124,6 +124,14 @@ h1 em{font-style:normal;color:var(--green)}
 .field input{width:100%;padding:14px 16px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:12px;color:var(--text);font-family:'Outfit',sans-serif;font-size:15px;outline:none;transition:.2s}
 .field input:focus{border-color:var(--green);background:rgba(6,193,103,.04)}
 .field input::placeholder{color:rgba(255,255,255,.2)}
+.field select{width:100%;padding:14px 16px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:12px;color:var(--text);font-family:'Outfit',sans-serif;font-size:15px;outline:none;transition:.2s;cursor:pointer}
+.field select:focus{border-color:var(--green);background:rgba(6,193,103,.04)}
+.field select option{background:#1a1a1a;color:var(--text)}
+.auth-tabs{display:flex;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px}
+.atab{flex:1;padding:10px;border:none;background:none;color:var(--muted);font-family:'Outfit',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:.2s;text-align:center}
+.atab.active{background:var(--green);color:#000;font-weight:700}
+.auth-panel{display:none}
+.auth-panel.active{display:block}
 
 .btn-signin{width:100%;padding:15px;border-radius:100px;background:var(--green);color:#000;font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;border:none;cursor:pointer;transition:all .2s;margin-top:8px}
 .btn-signin:hover{background:#08e07a;transform:translateY(-1px)}
@@ -221,17 +229,61 @@ h1 em{font-style:normal;color:var(--green)}
       <button class="rtab" onclick="switchRole('driver')">Driver</button>
       <button class="rtab" onclick="switchRole('admin')">Admin</button>
     </div>
-    <div class="msg" id="loginMsg"></div>
-    <div class="field">
-      <label>Matric / Staff ID</label>
-      <input type="text" id="loginId" placeholder="e.g. 170405001" autocomplete="off">
+    <!-- Auth tabs -->
+    <div class="auth-tabs" id="authTabsWrap">
+      <button class="atab active" onclick="switchAuthTab('login')">Sign In</button>
+      <button class="atab" onclick="switchAuthTab('register')" id="regTabBtn">Register</button>
     </div>
-    <div class="field">
-      <label>Password</label>
-      <input type="password" id="loginPwd" placeholder="••••••••">
+
+    <!-- LOGIN PANEL -->
+    <div class="auth-panel active" id="authLogin">
+      <div class="msg" id="loginMsg"></div>
+      <div class="field">
+        <label>Matric / Staff ID</label>
+        <input type="text" id="loginId" placeholder="e.g. 170405001" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="loginPwd" placeholder="••••••••">
+      </div>
+      <button class="btn-signin" onclick="doLogin()">Sign In</button>
+      <p class="demo-hint">Demo: student / pass &nbsp;·&nbsp; driver1 / pass &nbsp;·&nbsp; admin / pass</p>
     </div>
-    <button class="btn-signin" onclick="doLogin()">Sign In</button>
-    <p class="demo-hint">Demo credentials:<br>student / pass &nbsp;·&nbsp; driver1 / pass &nbsp;·&nbsp; admin / pass</p>
+
+    <!-- REGISTER PANEL (students only) -->
+    <div class="auth-panel" id="authRegister">
+      <div class="msg" id="regMsg"></div>
+      <div class="field">
+        <label>Full Name</label>
+        <input type="text" id="regName" placeholder="e.g. Adebayo Okonkwo" autocomplete="name">
+      </div>
+      <div class="field">
+        <label>Matric Number</label>
+        <input type="text" id="regMatric" placeholder="e.g. 190405123" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Level</label>
+        <select id="regLevel">
+          <option value="100L">100 Level</option>
+          <option value="200L">200 Level</option>
+          <option value="300L" selected>300 Level</option>
+          <option value="400L">400 Level</option>
+          <option value="500L">500 Level</option>
+          <option value="600L">600 Level</option>
+          <option value="Postgrad">Postgraduate</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Department</label>
+        <input type="text" id="regDept" placeholder="e.g. Computer Science">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="regPwd" placeholder="Choose a password">
+      </div>
+      <button class="btn-signin" onclick="doRegister()">Create Account</button>
+      <p class="demo-hint">Only student accounts can self-register.<br>Driver & admin accounts are created by the institution.</p>
+    </div>
   </div>
 </div>
 
@@ -334,6 +386,65 @@ function initDemo(){
 
 document.getElementById('loginPwd').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 document.getElementById('loginId').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginPwd').focus()});
+
+function switchAuthTab(tab){
+  document.querySelectorAll('.atab').forEach((t,i)=>t.classList.toggle('active',['login','register'][i]===tab));
+  document.getElementById('authLogin').classList.toggle('active',tab==='login');
+  document.getElementById('authRegister').classList.toggle('active',tab==='register');
+  // Hide role tabs when registering (students only)
+  const rt=document.querySelector('.role-tabs');
+  if(rt) rt.style.display = tab==='register' ? 'none' : '';
+  // Reset messages
+  document.getElementById('loginMsg').textContent='';
+  document.getElementById('regMsg').textContent='';
+}
+
+function showRegMsg(t,type){
+  const el=document.getElementById('regMsg');
+  el.textContent=t; el.className='msg '+type; el.style.display='block';
+}
+
+async function doRegister(){
+  const name=document.getElementById('regName').value.trim();
+  const matric=document.getElementById('regMatric').value.trim();
+  const level=document.getElementById('regLevel').value;
+  const dept=document.getElementById('regDept').value.trim();
+  const pwd=document.getElementById('regPwd').value;
+
+  if(!name||!matric||!dept||!pwd){showRegMsg('Please fill in all fields.','error');return;}
+  if(pwd.length<4){showRegMsg('Password must be at least 4 characters.','error');return;}
+  if(!/^[a-zA-Z0-9]+$/.test(matric)){showRegMsg('Matric number should be alphanumeric only.','error');return;}
+
+  showRegMsg('Creating your account…','success');
+
+  // Check if matric already exists locally
+  if(ACCOUNTS.students[matric]){showRegMsg('This matric number is already registered. Sign in instead.','error');return;}
+
+  // Save locally first (works even without Supabase)
+  ACCOUNTS.students[matric]={password:pwd,name,level,dept};
+
+  // Try Supabase
+  let savedToCloud=false;
+  try{
+    const sb=typeof getSupabase==='function'?getSupabase():null;
+    if(sb){
+      const{error}=await sb.from('accounts').insert({
+        id:matric, password:pwd, role:'student', name, level, dept
+      });
+      if(!error) savedToCloud=true;
+      else if(error.code==='23505'){
+        showRegMsg('This matric number is already registered. Sign in instead.','error');
+        return;
+      }
+    }
+  }catch(e){console.warn('Register Supabase error:',e.message);}
+
+  // Auto-login after registration
+  const session={role:'student',id:matric,name,level,dept,password:pwd,loginTime:Date.now()};
+  localStorage.setItem('oau_session',JSON.stringify(session));
+  showRegMsg('Account created! Signing you in…','success');
+  setTimeout(()=>window.location.href='student.html',900);
+}
 </script>
 <script src="pwa.js"></script>
 <!--Added from MD-->
