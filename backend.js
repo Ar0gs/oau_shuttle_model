@@ -556,14 +556,29 @@ async function subscribeRealtime(onUpdate) {
       sb.removeChannel(_realtimeChannel);
     }
 
+    // Wrapper: re-fetch fresh data from Supabase THEN call the page's render function.
+    // This is critical — without it, onUpdate reads stale localStorage after a realtime event.
+    async function onRealtimeChange(table) {
+      try {
+        if (table === 'buses') await sbGetBuses();
+        else if (table === 'requests') await sbGetRequests();
+        // pins and stats are fetched directly by the page in their own render calls
+      } catch(e) {
+        console.warn('[OAU Transit] Realtime re-fetch failed:', e.message);
+      }
+      onUpdate(table);
+    }
+
     _realtimeChannel = sb.channel('oau-transit-v2')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'buses' },         () => onUpdate('buses'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ride_requests' }, () => onUpdate('requests'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_pins' },  () => onUpdate('pins'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'stats' },         () => onUpdate('stats'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buses' },         () => onRealtimeChange('buses'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ride_requests' }, () => onRealtimeChange('requests'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_pins' },  () => onRealtimeChange('pins'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stats' },         () => onRealtimeChange('stats'))
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('[OAU Transit] Supabase Realtime connected ✅');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[OAU Transit] Realtime issue:', status, '— polling fallback active');
         }
       });
   } catch(e) {
@@ -597,8 +612,11 @@ initLocalBuses();
  * Pull fresh data from Supabase into localStorage on page load.
  * Call this once per page after DOM is ready.
  */
-async function syncFromSupabase() {
-  if (!isSupabaseConfigured()) return;
+async function syncFromSupabase(andRender) {
+  if (!isSupabaseConfigured()) {
+    if (andRender) andRender();
+    return;
+  }
   try {
     await sbGetBuses();
     await sbGetRequests();
@@ -606,4 +624,5 @@ async function syncFromSupabase() {
   } catch(e) {
     console.warn('[OAU Transit] Supabase sync failed, using local data:', e.message);
   }
+  if (andRender) andRender();
 }
