@@ -86,8 +86,9 @@ html,body{height:100%;font-family:'Outfit',sans-serif;background:var(--black);co
   .nav-hud{left:calc(360px + 50%)}
 }
 @media(max-width:767px){
-  .panel{left:0;right:0;bottom:0;border-radius:20px 20px 0 0;border-bottom:none;overflow:hidden;transform:translateY(calc(100% - var(--sheet-peek) - 56px))}
+  .panel{left:0;right:0;bottom:0;border-radius:20px 20px 0 0;border-bottom:none;overflow:hidden;transform:translateY(calc(100% - var(--sheet-peek) - 56px));max-height:calc(100dvh - var(--topbar))}
   .panel.expanded{transform:translateY(0)}
+  .panel.expanded .panel-inner{overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100dvh - var(--topbar) - 80px);padding-bottom:env(safe-area-inset-bottom,24px)}
   #map{bottom:calc(var(--sheet-peek) + 56px)}
 }
 
@@ -585,9 +586,20 @@ addLog('🚌 Driver dashboard ready. Go on duty to start.','info');
 
 let bc2;
 try{bc2=new BroadcastChannel('oau_transit');bc2.onmessage=()=>{renderDashboard();checkForAssignment();};}catch(e){}
+
+// Subscribe to Supabase Realtime (re-fetches fresh data before rendering)
 subscribeRealtime(()=>{renderDashboard();checkForAssignment();});
-setInterval(()=>{renderDashboard();checkForAssignment();},2500);
-renderDashboard();
+
+// Polling fallback: re-fetch from Supabase every 5s
+async function pollAndRender() {
+  await syncFromSupabase();
+  renderDashboard();
+  checkForAssignment();
+}
+setInterval(pollAndRender, 5000);
+
+// Initial load: sync from Supabase first
+syncFromSupabase(() => { renderDashboard(); checkForAssignment(); });
 </script>
 <script src="pwa.js"></script>
 </body>
