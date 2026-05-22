@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="application-name" content="OAU Transit">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OAUTransit">
+<meta name="theme-color" content="#06C167" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#06C167">
+<meta name="msapplication-TileColor" content="#06C167">
+<meta name="msapplication-TileImage" content="icon-144x144.png">
+<meta name="msapplication-config" content="none">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-96x96.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192x192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icon-152x152.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
+<link rel="apple-touch-startup-image" href="icon-512x512.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<title>OAU Transit — Driver</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@500;700;800;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --black:#0a0a0a;--surface:#111;--card:#1a1a1a;--card2:#222;
+  --border:rgba(255,255,255,.08);--text:#f0f0f0;--muted:#888;--subtle:#555;
+  --green:#06C167;--green-dim:rgba(6,193,103,.15);
+  --gold:#FFB800;--gold-dim:rgba(255,184,0,.12);
+  --red:#FF4B4B;--red-dim:rgba(255,75,75,.12);
+  --blue:#4B9EFF;--blue-dim:rgba(75,158,255,.12);
+  --topbar:56px;--sheet-peek:100px;
+}
+html,body{height:100%;font-family:'Outfit',sans-serif;background:var(--black);color:var(--text);overflow:hidden}
+
+/* ── TOPBAR ── */
+.topbar{position:fixed;top:0;left:0;right:0;height:var(--topbar);z-index:600;display:flex;align-items:center;padding:0 16px;gap:10px;background:rgba(10,10,10,.92);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+.logo{font-family:'Cabinet Grotesk',sans-serif;font-size:18px;font-weight:900;color:var(--gold)}
+.logo-dot{color:var(--text)}
+.sep{width:1px;height:20px;background:var(--border)}
+.badge{padding:4px 10px;border-radius:100px;font-size:11px;font-weight:600}
+.badge-driver{background:var(--gold-dim);color:var(--gold);border:1px solid rgba(255,184,0,.25)}
+.duty-btn{display:flex;align-items:center;gap:7px;padding:8px 16px;border-radius:100px;border:1px solid var(--border);background:var(--card);color:var(--muted);font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .3s}
+.duty-btn.on{background:var(--green-dim);border-color:rgba(6,193,103,.4);color:var(--green)}
+.duty-dot{width:8px;height:8px;border-radius:50%;background:var(--subtle);transition:.3s}
+.duty-btn.on .duty-dot{background:var(--green);animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.driver-name{margin-left:auto;font-size:13px;color:var(--muted)}
+.btn-out{padding:7px 14px;border-radius:100px;background:var(--card);border:1px solid var(--border);color:var(--muted);font-size:13px;cursor:pointer;transition:.2s}
+.btn-out:hover{color:var(--text)}
+
+/* ── MAP ── */
+#map{position:fixed;top:var(--topbar);left:0;right:0;bottom:0;z-index:1}
+
+/* ── HUD (floating top center on map) ── */
+.nav-hud{position:fixed;top:calc(var(--topbar) + 12px);left:50%;transform:translateX(-50%);z-index:300;background:rgba(10,10,10,.92);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:16px;padding:14px 24px;text-align:center;display:none;min-width:240px}
+.hud-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.hud-main{font-family:'Cabinet Grotesk',sans-serif;font-size:20px;font-weight:900}
+.hud-sub{font-size:12px;color:var(--muted);margin-top:2px}
+
+/* ── ARRIVE BTN ── */
+.arrive-btn{position:fixed;bottom:calc(var(--sheet-peek) + 72px);left:50%;transform:translateX(-50%);z-index:300;
+  padding:15px 40px;border-radius:100px;background:var(--green);color:#000;
+  font-family:'Cabinet Grotesk',sans-serif;font-size:16px;font-weight:900;
+  border:none;cursor:pointer;display:none;
+  box-shadow:0 8px 32px rgba(6,193,103,.35);transition:all .2s}
+.arrive-btn:hover{background:#08e07a;transform:translateX(-50%) scale(1.03)}
+@media(min-width:768px){
+  .arrive-btn{bottom:20px}
+}
+
+/* ── PANEL ── */
+.panel{position:fixed;z-index:400;background:var(--surface);border:1px solid var(--border);transition:all .4s cubic-bezier(.4,0,.2,1)}
+@media(min-width:768px){
+  .panel{top:var(--topbar);left:0;width:360px;bottom:0;border-radius:0;border-left:none;border-top:none;border-bottom:none;overflow-y:auto;transform:none!important}
+  #map{left:360px}
+  .panel-handle,.panel-peek{display:none}
+  .arrive-btn{bottom:20px;left:calc(360px + 50%);transform:translateX(-50%)}
+  .nav-hud{left:calc(360px + 50%)}
+}
+@media(max-width:767px){
+  .panel{left:0;right:0;bottom:0;border-radius:20px 20px 0 0;border-bottom:none;overflow:hidden;transform:translateY(calc(100% - var(--sheet-peek) - 56px))}
+  .panel.expanded{transform:translateY(0)}
+  #map{bottom:calc(var(--sheet-peek) + 56px)}
+}
+
+.panel-handle{width:40px;height:4px;background:var(--subtle);border-radius:2px;margin:12px auto 0}
+.panel-inner{padding:0 16px 24px}
+.panel-peek{padding:12px 16px 16px;cursor:pointer;border-bottom:1px solid var(--border)}
+.peek-row{display:flex;justify-content:space-between;align-items:center}
+.peek-title{font-family:'Cabinet Grotesk',sans-serif;font-size:16px;font-weight:800}
+.peek-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.expand-chip{background:var(--card);border:1px solid var(--border);border-radius:100px;padding:5px 12px;font-size:12px;color:var(--muted)}
+
+/* ── SECTIONS ── */
+.section{padding:20px 0;border-bottom:1px solid var(--border)}
+.section:last-child{border-bottom:none}
+.sec-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--subtle);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.notif-badge{background:var(--red);color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:100px}
+
+/* ── BUS CARD ── */
+.bus-plate{font-family:'Cabinet Grotesk',sans-serif;font-size:28px;font-weight:900;letter-spacing:3px;color:var(--gold);text-align:center;background:var(--gold-dim);border:1px solid rgba(255,184,0,.2);border-radius:12px;padding:12px;margin-bottom:14px}
+.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.meta-box{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center}
+.meta-val{font-family:'Cabinet Grotesk',sans-serif;font-size:22px;font-weight:900}
+.meta-lbl{font-size:10px;color:var(--muted);margin-top:2px}
+
+/* ── TRIP CARDS ── */
+.trip-card{border-radius:14px;padding:14px;margin-bottom:10px;border:1px solid}
+.trip-card.pending{background:var(--gold-dim);border-color:rgba(255,184,0,.3)}
+.trip-card.active{background:var(--green-dim);border-color:rgba(6,193,103,.3)}
+.tc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.tc-loc{font-family:'Cabinet Grotesk',sans-serif;font-size:16px;font-weight:800}
+.tc-pill{font-size:10px;font-weight:700;padding:3px 9px;border-radius:100px}
+.tc-pill.pending{background:var(--gold-dim);color:var(--gold);border:1px solid rgba(255,184,0,.3)}
+.tc-pill.active{background:var(--green-dim);color:var(--green);border:1px solid rgba(6,193,103,.3)}
+.tc-detail{font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5}
+.tc-btns{display:flex;gap:8px}
+.btn-accept{flex:1;padding:11px;border-radius:10px;background:var(--green);color:#000;font-family:'Cabinet Grotesk',sans-serif;font-size:14px;font-weight:800;border:none;cursor:pointer;transition:.2s}
+.btn-accept:hover{background:#08e07a}
+.btn-decline{padding:11px 14px;border-radius:10px;background:var(--card);border:1px solid var(--border);color:var(--muted);font-size:13px;cursor:pointer;transition:.2s}
+.btn-decline:hover{color:var(--text)}
+
+/* ── LOG ── */
+.log-item{display:flex;gap:10px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;font-size:12px}
+.log-time{color:var(--subtle);flex-shrink:0;min-width:44px;font-variant-numeric:tabular-nums}
+.log-msg{flex:1;line-height:1.45}
+.log-msg.success{color:var(--green)}
+.log-msg.info{color:var(--blue)}
+.log-msg.alert{color:var(--gold)}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="backend.js"></script>
+
+<div class="topbar">
+  <div class="logo">OAU<span class="logo-dot">Transit</span></div>
+  <div class="sep"></div>
+  <div class="badge badge-driver">Driver</div>
+  <button class="duty-btn" id="dutyBtn" onclick="toggleDuty()">
+    <div class="duty-dot" id="dutyDot"></div>
+    <span id="dutyLabel">Go On Duty</span>
+  </button>
+  <span class="driver-name" id="driverName">Loading…</span>
+  <button class="btn-out" onclick="logout()">Out</button>
+</div>
+
+<div id="map"></div>
+
+<div class="nav-hud" id="navHud">
+  <div class="hud-label" id="hudLabel">Navigating to</div>
+  <div class="hud-main" id="hudMain">–</div>
+  <div class="hud-sub" id="hudSub">Calculating…</div>
+</div>
+
+<button class="arrive-btn" id="arriveBtn" onclick="handleArrival()">✅ Mark as Arrived</button>
+
+<div class="panel" id="panel">
+  <div class="panel-handle" id="panelHandle"></div>
+  <div class="panel-peek" onclick="togglePanel()">
+    <div class="peek-row">
+      <div>
+        <div class="peek-title" id="peekTitle">Driver Dashboard</div>
+        <div class="peek-sub" id="peekSub">Go on duty to start</div>
+      </div>
+      <div class="expand-chip" id="expandBtn">↑ Expand</div>
+    </div>
+  </div>
+
+  <div class="panel-inner">
+    <!-- My Bus -->
+    <div class="section">
+      <div class="sec-title">My Bus</div>
+      <div class="bus-plate" id="busPlate">---</div>
+      <div class="meta-grid">
+        <div class="meta-box"><div class="meta-val" id="busStatusVal">–</div><div class="meta-lbl">Status</div></div>
+        <div class="meta-box"><div class="meta-val" id="busPassVal">0</div><div class="meta-lbl">Passengers</div></div>
+        <div class="meta-box"><div class="meta-val" id="tripsVal">0</div><div class="meta-lbl">Trips Today</div></div>
+        <div class="meta-box"><div class="meta-val" id="studentsVal">0</div><div class="meta-lbl">Students Served</div></div>
+      </div>
+    </div>
+
+    <!-- Incoming Requests -->
+    <div class="section">
+      <div class="sec-title">Incoming <span class="notif-badge" id="reqBadge">0</span></div>
+      <div id="requestsPanel"><div style="font-size:13px;color:var(--muted)">Go on duty to receive assignments.</div></div>
+    </div>
+
+    <!-- Active Trip -->
+    <div class="section">
+      <div class="sec-title">Active Trip</div>
+      <div id="activeTrip"><div style="font-size:13px;color:var(--muted)">No active trip.</div></div>
+    </div>
+
+    <!-- Trip Log -->
+    <div class="section">
+      <div class="sec-title">Trip Log</div>
+      <div id="tripLog"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const session = requireSession('driver');
+let myBusId = session.bus;
+let onDuty = false;
+let myTripsToday = 0;
+let myStudentsTotal = 0;
+let moveInterval = null;
+let currentPhase = 'idle';
+let panelExpanded = false;
+
+document.getElementById('driverName').textContent = session.name.split(' ').slice(0,2).join(' ');
+
+// ─── PANEL TOGGLE ─────────────────────────────────────────────────────────────
+function togglePanel() {
+  panelExpanded = !panelExpanded;
+  document.getElementById('panel').classList.toggle('expanded', panelExpanded);
+  document.getElementById('expandBtn').textContent = panelExpanded ? '↓ Collapse' : '↑ Expand';
+}
+let touchStart = 0;
+document.getElementById('panelHandle').addEventListener('touchstart', e => { touchStart = e.touches[0].clientY; });
+document.getElementById('panelHandle').addEventListener('touchend', e => {
+  const diff = touchStart - e.changedTouches[0].clientY;
+  if (diff > 40) { panelExpanded = true; document.getElementById('panel').classList.add('expanded'); }
+  else if (diff < -40) { panelExpanded = false; document.getElementById('panel').classList.remove('expanded'); }
+});
+
+// ─── MAP ─────────────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [7.5177, 4.5260], zoom: 15,
+  zoomControl: false, attributionControl: false
+});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+map.fitBounds([[7.508,4.515],[7.526,4.535]]);
+
+// Campus labels
+LOCATION_NAMES.forEach(name => {
+  const loc = OAU_LOCATIONS[name];
+  L.marker([loc.lat, loc.lng], {
+    icon: L.divIcon({
+      html: `<div style="font-size:18px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.8))">${loc.icon}</div>`,
+      iconSize:[24,24], iconAnchor:[12,12], className:''
+    })
+  }).bindTooltip(name, { permanent:false, direction:'top' }).addTo(map);
+});
+
+// My bus marker
+const buses0 = getBuses();
+const b0 = buses0[myBusId];
+let myBusMarker = L.marker(b0 ? [b0.lat, b0.lng] : [7.5177,4.5260], {
+  icon: L.divIcon({
+    html:`<div id="myBusIcon" style="width:44px;height:44px;border-radius:50%;background:#FFB800;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 0 0 8px rgba(255,184,0,.2),0 4px 20px rgba(0,0,0,.5)">🚌</div>`,
+    iconSize:[44,44], iconAnchor:[22,22], className:''
+  }),
+  zIndexOffset: 1000
+}).addTo(map).bindPopup(`<b>Your Bus: ${myBusId}</b><br>${session.plate}`);
+
+const otherBusMarkers = {};
+let routeLine = null;
+let studentPinMarkers2 = {};
+
+// ─── DUTY TOGGLE ─────────────────────────────────────────────────────────────
+function toggleDuty() {
+  onDuty = !onDuty;
+  const btn = document.getElementById('dutyBtn');
+  const dot = document.getElementById('dutyDot');
+  const label = document.getElementById('dutyLabel');
+  btn.classList.toggle('on', onDuty);
+  label.textContent = onDuty ? 'On Duty' : 'Go On Duty';
+
+  if (onDuty) {
+    setBusStatus(myBusId, 'idle');
+    startMovementEngine();
+    addLog('🟢 You are now on duty. Awaiting assignments.', 'success');
+    document.getElementById('peekSub').textContent = 'On duty — awaiting assignments';
+  } else {
+    setBusStatus(myBusId, 'offline');
+    stopMovementEngine();
+    addLog('⭕ You are now off duty.', 'info');
+    document.getElementById('peekSub').textContent = 'Off duty';
+  }
+  renderDashboard();
+}
+
+// ─── MY BUS UI ───────────────────────────────────────────────────────────────
+function updateMyBusUI() {
+  const buses = getBuses();
+  const bus = buses[myBusId];
+  if (!bus) return;
+  document.getElementById('busPlate').textContent = bus.plate || myBusId;
+  const statusMap = {idle:'Available',en_route_pickup:'Picking Up',en_route_delivery:'Delivering',offline:'Off Duty'};
+  document.getElementById('busStatusVal').textContent = statusMap[bus.status] || bus.status;
+  document.getElementById('busPassVal').textContent = bus.passengers || 0;
+  document.getElementById('tripsVal').textContent = myTripsToday;
+  document.getElementById('studentsVal').textContent = myStudentsTotal;
+  myBusMarker.setLatLng([bus.lat, bus.lng]);
+}
+
+// ─── REQUESTS PANEL ───────────────────────────────────────────────────────────
+function updateRequests() {
+  const requests = getRequests();
+  const panel = document.getElementById('requestsPanel');
+  const bus = getBuses()[myBusId];
+  const badge = document.getElementById('reqBadge');
+
+  if (!onDuty || !bus || bus.status === 'offline') {
+    panel.innerHTML = `<div style="font-size:13px;color:var(--muted)">Go on duty to receive assignments.</div>`;
+    badge.textContent = '0';
+    return;
+  }
+
+  const pending = Object.values(requests).filter(r =>
+    r.status === 'waiting' && r.students.length >= MIN_STUDENTS_FOR_DISPATCH
+  );
+
+  badge.textContent = pending.length;
+  if (!pending.length) {
+    panel.innerHTML = `<div style="font-size:13px;color:var(--muted)">No pending pickup requests.</div>`;
+    return;
+  }
+
+  panel.innerHTML = '';
+  pending.forEach(req => {
+    const div = document.createElement('div');
+    div.className = 'trip-card pending';
+    div.innerHTML = `
+      <div class="tc-top">
+        <div class="tc-loc">${req.location}</div>
+        <div class="tc-pill pending">New Request</div>
+      </div>
+      <div class="tc-detail">
+        👥 ${req.students.length} students waiting<br>
+        📍 → ${req.students[0]?.destination || 'Various'}<br>
+        🕐 ${new Date(req.createdAt).toLocaleTimeString()}
+      </div>
+      <div class="tc-btns">
+        <button class="btn-accept" onclick="acceptTrip('${req.location}')">Accept Trip</button>
+        <button class="btn-decline" onclick="">Skip</button>
+      </div>
+    `;
+    panel.appendChild(div);
+  });
+}
+
+function acceptTrip(locationKey) {
+  const requests = getRequests();
+  const req = requests[locationKey];
+  if (!req) return;
+
+  const loc = OAU_LOCATIONS[locationKey];
+  req.status = 'dispatched';
+  req.assignedBus = myBusId;
+  req.dispatchTime = Date.now();
+  saveRequests(req);
+
+  // Update across all requests
+  const all = getRequests();
+  all[locationKey] = req;
+  saveRequests(all);
+
+  setBusStatus(myBusId, 'en_route_pickup', {
+    destination: locationKey, destinationCoords: loc,
+    tripStudents: req.students.length, currentTrip: locationKey, passengers: 0
+  });
+  addLog(`🔔 Accepted: heading to pick up ${req.students.length} students at ${locationKey}`, 'alert');
+  document.getElementById('navHud').style.display = 'block';
+  renderDashboard();
+}
+
+// ─── ACTIVE TRIP ─────────────────────────────────────────────────────────────
+function updateActiveTrip() {
+  const buses = getBuses();
+  const bus = buses[myBusId];
+  const el = document.getElementById('activeTrip');
+
+  if (!bus || (bus.status !== 'en_route_pickup' && bus.status !== 'en_route_delivery')) {
+    el.innerHTML = `<div style="font-size:13px;color:var(--muted)">No active trip. Accept a request above.</div>`;
+    document.getElementById('navHud').style.display = 'none';
+    return;
+  }
+
+  const dest = bus.currentTrip;
+  const loc = OAU_LOCATIONS[dest];
+  const dist = loc ? distKm(bus.lat, bus.lng, loc.lat, loc.lng) : 0;
+  const phase = bus.status === 'en_route_pickup' ? 'Picking up at' : 'Delivering to';
+  const color = bus.status === 'en_route_pickup' ? 'var(--gold)' : 'var(--green)';
+
+  el.innerHTML = `
+    <div class="trip-card active">
+      <div class="tc-top">
+        <div class="tc-loc">${dest}</div>
+        <div class="tc-pill active">${bus.status === 'en_route_pickup' ? 'Picking Up' : 'Delivering'}</div>
+      </div>
+      <div class="tc-detail">
+        📍 ${phase} <b>${dest}</b><br>
+        👥 ${bus.tripStudents || 0} students<br>
+        🛣️ ${dist < 1 ? (dist*1000).toFixed(0)+'m' : dist.toFixed(2)+'km'} away
+      </div>
+    </div>
+  `;
+
+  document.getElementById('navHud').style.display = 'block';
+  document.getElementById('hudMain').textContent = dest;
+  document.getElementById('hudLabel').textContent = phase;
+  document.getElementById('hudSub').textContent = `${dist < 1 ? (dist*1000).toFixed(0)+'m' : dist.toFixed(1)+'km'} away`;
+
+  if (loc && routeLine) map.removeLayer(routeLine);
+  if (loc) {
+    routeLine = L.polyline([[bus.lat,bus.lng],[loc.lat,loc.lng]], {
+      color: bus.status === 'en_route_pickup' ? '#FFB800' : '#06C167',
+      weight: 4, dashArray: '10,6', opacity: .85
+    }).addTo(map);
+  }
+
+  document.getElementById('peekTitle').textContent = `${bus.status==='en_route_pickup'?'Picking up at':'Delivering to'} ${dest}`;
+  document.getElementById('peekSub').textContent = `${dist < 1 ? (dist*1000).toFixed(0)+'m' : dist.toFixed(1)+'km'} away`;
+}
+
+// ─── RENDER OTHER BUSES & STUDENT PINS ───────────────────────────────────────
+async function renderOthers() {
+  const buses = getBuses();
+  Object.values(buses).forEach(b => {
+    if (b.id === myBusId) return;
+    const isMoving = b.status !== 'idle' && b.status !== 'offline';
+    const color = isMoving ? '#4B9EFF' : '#555';
+    if (!otherBusMarkers[b.id]) {
+      otherBusMarkers[b.id] = L.marker([b.lat,b.lng],{
+        icon:L.divIcon({
+          html:`<div style="width:32px;height:32px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,.7);display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 3px 10px rgba(0,0,0,.5)">🚌</div>`,
+          iconSize:[32,32],iconAnchor:[16,16],className:''
+        })
+      }).bindPopup(`<b>${b.id}</b><br>${b.driverName}`).addTo(map);
+    } else {
+      otherBusMarkers[b.id].setLatLng([b.lat,b.lng]);
+    }
+  });
+
+  // Student pins
+  try {
+    const pins = await sbGetStudentPins();
+    const ids = new Set();
+    pins.forEach(pin => {
+      const sid = pin.student_id || pin.studentId;
+      ids.add(sid);
+      if (!studentPinMarkers2[sid]) {
+        studentPinMarkers2[sid] = L.marker([pin.lat,pin.lng],{
+          icon:L.divIcon({
+            html:`<div style="width:10px;height:10px;border-radius:50%;background:#4B9EFF;border:2px solid #fff;box-shadow:0 0 0 4px rgba(75,158,255,.25)"></div>`,
+            iconSize:[10,10],iconAnchor:[5,5],className:''
+          })
+        }).bindPopup(`<b>${pin.name}</b><br>Looking for a bus`).addTo(map);
+      } else {
+        studentPinMarkers2[sid].setLatLng([pin.lat,pin.lng]);
+      }
+    });
+    Object.keys(studentPinMarkers2).forEach(sid=>{
+      if(!ids.has(sid)){map.removeLayer(studentPinMarkers2[sid]);delete studentPinMarkers2[sid];}
+    });
+  } catch {}
+}
+
+// ─── MOVEMENT ENGINE ─────────────────────────────────────────────────────────
+function startMovementEngine(){if(moveInterval)return;moveInterval=setInterval(movementTick,TICK_MS);}
+function stopMovementEngine(){clearInterval(moveInterval);moveInterval=null;}
+
+function movementTick(){
+  const buses=getBuses();
+  const bus=buses[myBusId];
+  if(!bus)return;
+  myBusMarker.setLatLng([bus.lat,bus.lng]);
+  if(onDuty)map.panTo([bus.lat,bus.lng],{animate:true,duration:.8});
+
+  if(!onDuty||bus.status==='idle'||bus.status==='offline')return;
+
+  const target=OAU_LOCATIONS[bus.currentTrip||bus.destination];
+  if(!target)return;
+
+  const move=moveBusTowards(bus,target.lat,target.lng);
+  updateBusPosition(myBusId,move.lat,move.lng);
+
+  if(move.arrived)handlePhaseTransition(bus);
+  renderDashboard();
+}
+
+function handlePhaseTransition(bus){
+  const requests=getRequests();
+  if(bus.status==='en_route_pickup'){
+    const req=requests[bus.currentTrip];
+    if(req){
+      const destination=req.students[0]?.destination||'Main Gate';
+      addLog(`✅ Arrived at ${bus.currentTrip}. Picked up ${req.students.length} students!`,'success');
+      addLog(`🔵 Now heading to ${destination}`,'info');
+      req.status='delivering';
+      const all=getRequests();all[bus.currentTrip]=req;saveRequests(all);
+      setBusStatus(myBusId,'en_route_delivery',{
+        currentTrip:destination,destination,destinationCoords:OAU_LOCATIONS[destination],passengers:req.students.length
+      });
+      document.getElementById('arriveBtn').style.display='flex';
+    }
+  } else if(bus.status==='en_route_delivery'){
+    handleArrival();
+  }
+}
+
+function handleArrival(){
+  const buses=getBuses();
+  const bus=buses[myBusId];
+  if(!bus||bus.status!=='en_route_delivery')return;
+
+  const n=bus.passengers||bus.tripStudents||0;
+  myTripsToday++;myStudentsTotal+=n;
+  addLog(`🏁 Dropped off ${n} students at ${bus.currentTrip}. Trip complete!`,'success');
+  incrementStats(n);
+
+  const all=getRequests();
+  Object.keys(all).forEach(k=>{if(all[k].assignedBus===myBusId)all[k].status='completed';});
+  saveRequests(all);
+
+  setBusStatus(myBusId,'idle',{passengers:0,tripStudents:0,currentTrip:null,destination:null,destinationCoords:null});
+  document.getElementById('arriveBtn').style.display='none';
+  if(routeLine){map.removeLayer(routeLine);routeLine=null;}
+  setTimeout(checkPending,1000);
+  renderDashboard();
+}
+
+function checkPending(){
+  const reqs=getRequests();
+  for(const k of Object.keys(reqs)){
+    if(reqs[k].status==='pending_bus'||(reqs[k].status==='waiting'&&reqs[k].students.length>=MIN_STUDENTS_FOR_DISPATCH)){
+      autoDispatch(k);break;
+    }
+  }
+}
+
+// ─── TRIP LOG ────────────────────────────────────────────────────────────────
+function addLog(msg,type='info'){
+  const log=document.getElementById('tripLog');
+  const time=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const item=document.createElement('div');
+  item.className='log-item';
+  item.innerHTML=`<span class="log-time">${time}</span><span class="log-msg ${type}">${msg}</span>`;
+  log.prepend(item);
+  if(log.children.length>30)log.lastChild.remove();
+}
+
+// ─── RENDER ALL ──────────────────────────────────────────────────────────────
+function renderDashboard(){
+  updateMyBusUI();
+  updateRequests();
+  updateActiveTrip();
+  renderOthers();
+}
+
+let lastSig='';
+function checkForAssignment(){
+  const buses=getBuses();
+  const bus=buses[myBusId];
+  if(!bus)return;
+  const sig=bus.status+bus.currentTrip;
+  if(sig!==lastSig){
+    lastSig=sig;
+    if(bus.status==='en_route_pickup'&&bus.currentTrip){
+      addLog(`🔔 Assigned! Pick up students at ${bus.currentTrip}`,'alert');
+    }
+  }
+}
+
+// Init
+if(b0)myBusMarker.setLatLng([b0.lat,b0.lng]);
+addLog('🚌 Driver dashboard ready. Go on duty to start.','info');
+
+let bc2;
+try{bc2=new BroadcastChannel('oau_transit');bc2.onmessage=()=>{renderDashboard();checkForAssignment();};}catch(e){}
+subscribeRealtime(()=>{renderDashboard();checkForAssignment();});
+setInterval(()=>{renderDashboard();checkForAssignment();},2500);
+renderDashboard();
+</script>
+<script src="pwa.js"></script>
+</body>
+</html>

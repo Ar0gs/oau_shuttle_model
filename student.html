@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="application-name" content="OAU Transit">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OAUTransit">
+<meta name="theme-color" content="#06C167" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#06C167">
+<meta name="msapplication-TileColor" content="#06C167">
+<meta name="msapplication-TileImage" content="icon-144x144.png">
+<meta name="msapplication-config" content="none">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-96x96.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192x192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icon-152x152.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
+<link rel="apple-touch-startup-image" href="icon-512x512.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<title>OAU Transit — Student</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@500;700;800;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --black:#0a0a0a;--surface:#111;--card:#1a1a1a;--card2:#222;
+  --border:rgba(255,255,255,.08);--text:#f0f0f0;--muted:#888;--subtle:#555;
+  --green:#06C167;--green-dim:rgba(6,193,103,.15);--green-glow:rgba(6,193,103,.3);
+  --gold:#FFB800;--gold-dim:rgba(255,184,0,.12);
+  --red:#FF4B4B;--red-dim:rgba(255,75,75,.12);
+  --blue:#4B9EFF;
+  --topbar:56px;--sheet-peek:80px;
+}
+html,body{height:100%;font-family:'Outfit',sans-serif;background:var(--black);color:var(--text);overflow:hidden}
+
+/* ── TOPBAR ── */
+.topbar{position:fixed;top:0;left:0;right:0;height:var(--topbar);z-index:600;display:flex;align-items:center;padding:0 16px;gap:12px;background:rgba(10,10,10,.9);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+.logo{font-family:'Cabinet Grotesk',sans-serif;font-size:18px;font-weight:900;color:var(--green)}
+.logo-dot{color:var(--text)}
+.topbar-sep{width:1px;height:20px;background:var(--border)}
+.topbar-tag{font-size:12px;color:var(--muted);font-weight:400}
+.user-chip{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--card);border:1px solid var(--border);border-radius:100px;font-size:13px;cursor:pointer;margin-left:auto}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--green);color:#000;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+.topbar-btn{padding:7px 14px;border-radius:100px;background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--muted);font-family:'Outfit',sans-serif;font-size:13px;cursor:pointer;transition:.2s}
+.topbar-btn:hover{color:var(--text)}
+
+/* ── MAP (ALWAYS FULL SCREEN) ── */
+#map{position:fixed;top:var(--topbar);left:0;right:0;bottom:0;z-index:1}
+
+/* ── FLOATING PANEL (bottom sheet on mobile, sidebar on desktop) ── */
+.panel{position:fixed;z-index:400;background:var(--surface);border:1px solid var(--border);transition:all .4s cubic-bezier(.4,0,.2,1)}
+
+/* DESKTOP: left sidebar */
+@media(min-width:768px){
+  .panel{top:var(--topbar);left:0;width:360px;bottom:0;border-radius:0;border-left:none;border-top:none;border-bottom:none;overflow-y:auto;transform:none!important}
+  #map{left:360px}
+  .panel-handle{display:none}
+  .panel-toggle{display:none}
+}
+
+/* MOBILE: bottom sheet */
+@media(max-width:767px){
+  .panel{left:0;right:0;bottom:0;border-radius:20px 20px 0 0;border-bottom:none;overflow:hidden;transform:translateY(calc(100% - var(--sheet-peek) - 56px))}
+  .panel.expanded{transform:translateY(0)}
+  #map{bottom:calc(var(--sheet-peek) + 56px)}
+}
+
+.panel-handle{width:40px;height:4px;background:var(--subtle);border-radius:2px;margin:12px auto 0;cursor:grab}
+.panel-inner{padding:0 16px 24px;display:flex;flex-direction:column;gap:0}
+
+/* ── PANEL HEADER (mobile only visible) ── */
+.panel-peek{padding:12px 16px 16px;cursor:pointer;border-bottom:1px solid var(--border)}
+@media(min-width:768px){.panel-peek{display:none}}
+.peek-title{font-family:'Cabinet Grotesk',sans-serif;font-size:16px;font-weight:800}
+.peek-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.peek-row{display:flex;justify-content:space-between;align-items:center}
+.expand-btn{background:var(--card);border:1px solid var(--border);border-radius:100px;padding:5px 12px;font-size:12px;color:var(--muted);cursor:pointer}
+
+/* ── SECTIONS ── */
+.section{padding:20px 0;border-bottom:1px solid var(--border)}
+.section:last-child{border-bottom:none}
+.sec-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--subtle);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.live-badge{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite alternate}
+@keyframes blink{from{opacity:1}to{opacity:.2}}
+
+/* ── FIELDS ── */
+.field-row{display:flex;flex-direction:column;gap:8px}
+.field-item{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:10px;transition:.2s}
+.field-item:focus-within{border-color:rgba(6,193,103,.4);background:rgba(6,193,103,.04)}
+.field-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.field-dot.from{background:var(--green)}
+.field-dot.to{background:var(--text);border:2px solid var(--subtle)}
+.field-line{width:1px;height:20px;background:var(--border);margin:0 4px 0 4px;align-self:stretch}
+.field-label{font-size:11px;color:var(--muted);margin-bottom:2px}
+.field-item select{width:100%;background:none;border:none;color:var(--text);font-family:'Outfit',sans-serif;font-size:14px;font-weight:500;outline:none;cursor:pointer}
+.field-item select option{background:var(--surface);color:var(--text)}
+.connector-line{display:flex;align-items:center;justify-content:center;height:8px}
+.connector-line::before{content:'';width:1px;height:100%;background:var(--border)}
+
+/* ── BUTTONS ── */
+.btn-request{width:100%;padding:15px;border-radius:14px;background:var(--green);color:#000;font-family:'Cabinet Grotesk',sans-serif;font-size:16px;font-weight:800;border:none;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px}
+.btn-request:hover{background:#08e07a;transform:scale(1.01)}
+.btn-request:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-pin{width:100%;padding:13px;border-radius:14px;background:var(--card);border:1px solid var(--border);color:var(--text);font-family:'Outfit',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px}
+.btn-pin:hover{border-color:var(--green);color:var(--green)}
+.btn-pin.pinned{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+
+/* ── STATUS CARD ── */
+.status-card{border-radius:16px;padding:16px;border:1px solid}
+.status-card.idle{background:var(--card);border-color:var(--border)}
+.status-card.waiting{background:var(--gold-dim);border-color:rgba(255,184,0,.3)}
+.status-card.dispatched{background:var(--green-dim);border-color:rgba(6,193,103,.3)}
+.sc-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.sc-icon{font-size:22px}
+.sc-title{font-family:'Cabinet Grotesk',sans-serif;font-size:16px;font-weight:800}
+.sc-sub{font-size:13px;color:var(--muted);line-height:1.55}
+.progress-wrap{margin-top:12px}
+.progress-label{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px}
+.progress-track{height:4px;background:var(--border);border-radius:4px;overflow:hidden}
+.progress-fill{height:100%;border-radius:4px;background:var(--green);transition:width .6s}
+
+/* ── RING COUNTER ── */
+.ring-row{display:flex;align-items:center;gap:12px;background:var(--card2);border-radius:12px;padding:10px 14px;margin-top:10px;border:1px solid var(--border)}
+.ring-wrap{position:relative;width:44px;height:44px;flex-shrink:0}
+.ring-wrap svg{transform:rotate(-90deg)}
+.ring-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Cabinet Grotesk',sans-serif;font-size:12px;font-weight:900;color:var(--green)}
+.ring-info{}
+.ring-lbl{font-size:11px;color:var(--muted)}
+.ring-val{font-size:13px;font-weight:600}
+
+/* ── BUS LIST ── */
+.bus-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;transition:.2s;cursor:default}
+.bus-item:hover{border-color:rgba(6,193,103,.25)}
+.bus-led{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.bus-led.idle{background:var(--subtle)}
+.bus-led.en_route_pickup{background:var(--gold);animation:blink .7s infinite alternate}
+.bus-led.en_route_delivery{background:var(--green);animation:blink .7s infinite alternate}
+.bus-info{flex:1;min-width:0}
+.bus-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bus-status{font-size:11px;color:var(--muted)}
+.bus-dist{font-size:12px;color:var(--blue);font-weight:600;flex-shrink:0}
+
+/* ── QUEUE ITEMS ── */
+.queue-item{padding:12px 14px;background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:8px}
+.qi-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.qi-loc{font-size:13px;font-weight:600}
+.qi-count{font-size:12px;font-weight:700}
+.qi-dest{font-size:11px;color:var(--muted);margin-bottom:8px}
+
+/* ── CANCEL BTN ── */
+.btn-cancel{width:100%;padding:12px;border-radius:12px;background:var(--red-dim);border:1px solid rgba(255,75,75,.3);color:var(--red);font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:.2s;margin-top:10px}
+.btn-cancel:hover{background:var(--red);color:#fff}
+
+/* ── MAP FLOATING CONTROLS ── */
+.map-badge{position:fixed;top:calc(var(--topbar) + 12px);right:12px;z-index:200;display:flex;flex-direction:column;gap:8px}
+@media(min-width:768px){.map-badge{right:12px}}
+.map-chip{background:rgba(10,10,10,.88);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:12px;color:var(--text);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.map-chip span{color:var(--green);font-weight:700}
+
+/* ── TOAST ── */
+.toasts{position:fixed;bottom:calc(var(--sheet-peek) + 72px);right:16px;display:flex;flex-direction:column;gap:8px;z-index:800;pointer-events:none}
+@media(min-width:768px){.toasts{bottom:20px;right:20px}}
+.toast{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 18px;font-size:13px;font-weight:500;min-width:240px;display:flex;align-items:center;gap:10px;animation:toastIn .3s ease;pointer-events:all;max-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.toast.success{border-color:rgba(6,193,103,.35)}
+.toast.error{border-color:rgba(255,75,75,.35)}
+@keyframes toastIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+.toast-icon{font-size:16px}
+.toast-close{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 4px}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="backend.js"></script>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo">OAU<span class="logo-dot">Transit</span></div>
+  <div class="topbar-sep"></div>
+  <span class="topbar-tag">Student</span>
+  <div class="user-chip" id="userChip">
+    <div class="avatar" id="avatarInitial">S</div>
+    <span id="userName">Loading…</span>
+  </div>
+  <button class="topbar-btn" onclick="logout()">Out</button>
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- FLOATING MAP INFO -->
+<div class="map-badge">
+  <div class="map-chip">🚌 <span id="activeBusCount">4</span> buses live</div>
+</div>
+
+<!-- BOTTOM SHEET / SIDEBAR PANEL -->
+<div class="panel" id="panel">
+  <div class="panel-handle" id="panelHandle"></div>
+
+  <!-- MOBILE PEEK HEADER -->
+  <div class="panel-peek" onclick="togglePanel()">
+    <div class="peek-row">
+      <div>
+        <div class="peek-title" id="peekTitle">Request a Ride</div>
+        <div class="peek-sub" id="peekSub">Tap to expand</div>
+      </div>
+      <button class="expand-btn" id="expandBtn">↑ Expand</button>
+    </div>
+  </div>
+
+  <div class="panel-inner">
+    <!-- REQUEST FORM -->
+    <div class="section">
+      <div class="sec-title">Request a Ride</div>
+      <div class="field-row">
+        <div class="field-item">
+          <div>
+            <div class="field-label">From</div>
+            <select id="fromLocation"></select>
+          </div>
+          <div class="field-dot from" style="margin-left:auto"></div>
+        </div>
+        <div class="connector-line"></div>
+        <div class="field-item">
+          <div>
+            <div class="field-label">To</div>
+            <select id="toLocation"></select>
+          </div>
+          <div class="field-dot to" style="margin-left:auto"></div>
+        </div>
+      </div>
+      <button class="btn-request" id="requestBtn" onclick="submitRequest()">
+        <span>🚌</span> Request Ride
+      </button>
+      <button class="btn-pin" id="pinBtn" onclick="togglePin()">
+        📍 Pin My Location on Map
+      </button>
+    </div>
+
+    <!-- MY STATUS -->
+    <div class="section">
+      <div class="sec-title">My Status</div>
+      <div id="myStatus">
+        <div class="status-card idle">
+          <div class="sc-head"><span class="sc-icon">🕐</span><span class="sc-title">No Active Request</span></div>
+          <div class="sc-sub">Select pickup & destination above to request a ride.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LIVE QUEUE -->
+    <div class="section">
+      <div class="sec-title"><div class="live-badge"></div>Live Queue</div>
+      <div id="queueList"></div>
+    </div>
+
+    <!-- NEARBY BUSES -->
+    <div class="section">
+      <div class="sec-title">Active Buses</div>
+      <div id="busList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- TOASTS -->
+<div class="toasts" id="toastWrap"></div>
+
+<script>
+// ─── SESSION ─────────────────────────────────────────────────────────────────
+const session = requireSession('student');
+let isPinned = false;
+let panelExpanded = false;
+
+// ─── USER UI ─────────────────────────────────────────────────────────────────
+const initials = session.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+document.getElementById('avatarInitial').textContent = initials;
+document.getElementById('userName').textContent = session.name.split(' ')[0];
+
+// ─── PANEL MOBILE TOGGLE ─────────────────────────────────────────────────────
+function togglePanel(){
+  panelExpanded = !panelExpanded;
+  const panel = document.getElementById('panel');
+  const btn = document.getElementById('expandBtn');
+  panel.classList.toggle('expanded', panelExpanded);
+  btn.textContent = panelExpanded ? '↓ Collapse' : '↑ Expand';
+}
+
+// Drag to expand on mobile
+let touchStart = 0;
+document.getElementById('panelHandle').addEventListener('touchstart', e => { touchStart = e.touches[0].clientY; });
+document.getElementById('panelHandle').addEventListener('touchend', e => {
+  const diff = touchStart - e.changedTouches[0].clientY;
+  if (diff > 40) { panelExpanded = true; document.getElementById('panel').classList.add('expanded'); }
+  else if (diff < -40) { panelExpanded = false; document.getElementById('panel').classList.remove('expanded'); }
+});
+
+// ─── MAP SETUP ───────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [7.5177, 4.5260],
+  zoom: 15,
+  zoomControl: false,
+  attributionControl: false
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19
+}).addTo(map);
+
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.control.attribution({ position: 'bottomleft', prefix: '' }).addTo(map);
+
+map.fitBounds([[7.508, 4.515],[7.526, 4.535]]);
+
+// ─── POPULATE SELECTS ─────────────────────────────────────────────────────────
+const fromSel = document.getElementById('fromLocation');
+const toSel = document.getElementById('toLocation');
+LOCATION_NAMES.forEach(n => {
+  fromSel.add(new Option(`${OAU_LOCATIONS[n].icon} ${n}`, n));
+  toSel.add(new Option(`${OAU_LOCATIONS[n].icon} ${n}`, n));
+});
+toSel.selectedIndex = 1;
+
+// ─── MARKERS ─────────────────────────────────────────────────────────────────
+const busMarkers = {};
+const reqMarkers = {};
+const studentPinMarkers = {};
+let myPinMarker = null;
+
+function busIcon(bus) {
+  const colors = {
+    idle: '#888',
+    en_route_pickup: '#FFB800',
+    en_route_delivery: '#06C167',
+    offline: '#444'
+  };
+  const color = colors[bus.status] || '#888';
+  const isMoving = bus.status !== 'idle' && bus.status !== 'offline';
+  return L.divIcon({
+    html: `<div style="
+      width:38px;height:38px;border-radius:50%;
+      background:${color};
+      border:2.5px solid rgba(255,255,255,.9);
+      display:flex;align-items:center;justify-content:center;
+      font-size:16px;
+      box-shadow:0 0 0 ${isMoving?'6px':'0'} ${color}40, 0 4px 16px rgba(0,0,0,.5);
+      transition:all .4s
+    ">🚌</div>`,
+    iconSize:[38,38], iconAnchor:[19,19], className:''
+  });
+}
+
+function reqIcon(count) {
+  const pct = count / MIN_STUDENTS_FOR_DISPATCH;
+  const color = pct >= 1 ? '#06C167' : pct >= .5 ? '#FFB800' : '#FF4B4B';
+  return L.divIcon({
+    html: `<div style="
+      min-width:28px;height:28px;border-radius:14px;padding:0 8px;
+      background:${color};color:#000;
+      display:flex;align-items:center;justify-content:center;
+      font-size:11px;font-weight:800;font-family:'Cabinet Grotesk',sans-serif;
+      box-shadow:0 0 0 4px ${color}30,0 4px 12px rgba(0,0,0,.4);
+      white-space:nowrap
+    ">${count}</div>`,
+    iconSize:null, iconAnchor:[14,14], className:''
+  });
+}
+
+function studentPinIcon(name, isMe) {
+  const color = isMe ? '#06C167' : '#4B9EFF';
+  return L.divIcon({
+    html: `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+      <div style="
+        width:12px;height:12px;border-radius:50%;
+        background:${color};
+        border:2px solid rgba(255,255,255,.9);
+        box-shadow:0 0 0 4px ${color}30,0 0 0 8px ${color}15
+      "></div>
+      <div style="
+        background:rgba(10,10,10,.88);
+        color:${color};
+        font-size:10px;font-weight:600;font-family:'Outfit',sans-serif;
+        padding:2px 6px;border-radius:6px;
+        border:1px solid ${color}40;
+        white-space:nowrap;backdrop-filter:blur(8px)
+      ">${isMe?'You':name.split(' ')[0]}</div>
+    </div>`,
+    iconSize:null, iconAnchor:[6,6], className:''
+  });
+}
+
+// Add campus location markers
+LOCATION_NAMES.forEach(name => {
+  const loc = OAU_LOCATIONS[name];
+  L.marker([loc.lat, loc.lng], {
+    icon: L.divIcon({
+      html: `<div style="font-size:18px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))">${loc.icon}</div>`,
+      iconSize:[24,24], iconAnchor:[12,12], className:''
+    })
+  }).bindTooltip(name, { permanent: false, direction:'top', className:'', offset:[0,-8] }).addTo(map);
+});
+
+// ─── RENDER BUSES ─────────────────────────────────────────────────────────────
+function renderBuses() {
+  const buses = getBuses();
+  const busList = document.getElementById('busList');
+  busList.innerHTML = '';
+
+  let activeCount = 0;
+  Object.values(buses).forEach(bus => {
+    if (bus.status !== 'offline') activeCount++;
+
+    // Update map marker
+    if (!busMarkers[bus.id]) {
+      busMarkers[bus.id] = L.marker([bus.lat, bus.lng], { icon: busIcon(bus) })
+        .bindPopup(`<b>${bus.id}</b><br>${bus.driverName}<br>Plate: ${bus.plate}<br>Status: ${bus.status}`)
+        .addTo(map);
+    } else {
+      busMarkers[bus.id].setLatLng([bus.lat, bus.lng]);
+      busMarkers[bus.id].setIcon(busIcon(bus));
+    }
+
+    // Sidebar list
+    const dist = distKm(
+      OAU_LOCATIONS[fromSel.value]?.lat || 7.5177,
+      OAU_LOCATIONS[fromSel.value]?.lng || 4.5260,
+      bus.lat, bus.lng
+    );
+    const statusText = { idle:'Available', en_route_pickup:'Picking up', en_route_delivery:'En route', offline:'Offline' }[bus.status] || bus.status;
+    const item = document.createElement('div');
+    item.className = 'bus-item';
+    item.innerHTML = `
+      <div class="bus-led ${bus.status}"></div>
+      <div class="bus-info">
+        <div class="bus-name">${bus.id} · ${bus.plate}</div>
+        <div class="bus-status">${statusText}${bus.currentTrip ? ` → ${bus.currentTrip}` : ''}</div>
+      </div>
+      <div class="bus-dist">${dist < 1 ? (dist*1000).toFixed(0)+'m' : dist.toFixed(1)+'km'}</div>
+    `;
+    item.onclick = () => map.flyTo([bus.lat, bus.lng], 17);
+    busList.appendChild(item);
+  });
+  document.getElementById('activeBusCount').textContent = activeCount;
+}
+
+// ─── RENDER QUEUE ─────────────────────────────────────────────────────────────
+function renderQueue() {
+  const requests = getRequests();
+  const queueList = document.getElementById('queueList');
+  queueList.innerHTML = '';
+  const entries = Object.values(requests).filter(r => r.status !== 'completed');
+
+  if (!entries.length) {
+    queueList.innerHTML = '<div style="font-size:13px;color:var(--muted)">No active queues on campus right now.</div>';
+    Object.keys(reqMarkers).forEach(k => { map.removeLayer(reqMarkers[k]); delete reqMarkers[k]; });
+    return;
+  }
+
+  entries.forEach(req => {
+    const count = req.students.length;
+    const pct = Math.min(count / MIN_STUDENTS_FOR_DISPATCH, 1) * 100;
+    const color = req.status === 'dispatched' ? '#06C167' : pct >= 50 ? '#FFB800' : '#FF4B4B';
+    const item = document.createElement('div');
+    item.className = 'queue-item';
+    item.innerHTML = `
+      <div class="qi-top">
+        <span class="qi-loc">${OAU_LOCATIONS[req.location]?.icon || ''} ${req.location}</span>
+        <span class="qi-count" style="color:${color}">${count}/${MIN_STUDENTS_FOR_DISPATCH}</span>
+      </div>
+      <div class="qi-dest">→ ${req.students[0]?.destination||'Various'}${req.status==='dispatched'?'  🚌 Bus on way':''}</div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
+    `;
+    item.onclick = () => req.coords && map.flyTo([req.coords.lat, req.coords.lng], 17);
+    queueList.appendChild(item);
+
+    if (req.coords) {
+      if (!reqMarkers[req.location]) {
+        reqMarkers[req.location] = L.marker([req.coords.lat, req.coords.lng], { icon: reqIcon(count) })
+          .bindPopup(`<b>${count} waiting at ${req.location}</b><br>→ ${req.students[0]?.destination||''}`)
+          .addTo(map);
+      } else {
+        reqMarkers[req.location].setIcon(reqIcon(count));
+        reqMarkers[req.location].setLatLng([req.coords.lat, req.coords.lng]);
+      }
+    }
+  });
+
+  Object.keys(reqMarkers).forEach(k => {
+    if (!requests[k] || requests[k].status === 'completed') { map.removeLayer(reqMarkers[k]); delete reqMarkers[k]; }
+  });
+}
+
+// ─── RENDER MY STATUS ─────────────────────────────────────────────────────────
+function renderMyStatus() {
+  const requests = getRequests();
+  const myReq = Object.values(requests).find(r =>
+    r.students.some(s => s.id === session.id) && r.status !== 'completed'
+  );
+  const el = document.getElementById('myStatus');
+  const reqBtn = document.getElementById('requestBtn');
+
+  if (!myReq) {
+    el.innerHTML = `<div class="status-card idle"><div class="sc-head"><span class="sc-icon">🕐</span><span class="sc-title">No Active Request</span></div><div class="sc-sub">Request a ride using the form above.</div></div>`;
+    reqBtn.disabled = false;
+    document.getElementById('peekTitle').textContent = 'Request a Ride';
+    document.getElementById('peekSub').textContent = 'Tap to expand';
+    return;
+  }
+
+  const count = myReq.students.length;
+  const pct = Math.min(count / MIN_STUDENTS_FOR_DISPATCH, 1) * 100;
+  reqBtn.disabled = true;
+
+  if (myReq.status === 'dispatched' || myReq.status === 'delivering') {
+    const buses = getBuses();
+    const bus = buses[myReq.assignedBus];
+    el.innerHTML = `
+      <div class="status-card dispatched">
+        <div class="sc-head"><span class="sc-icon">🚌</span><span class="sc-title">Bus Dispatched!</span></div>
+        <div class="sc-sub"><b>${myReq.assignedBus}</b> heading to <b>${myReq.location}</b><br>Driver: ${bus?.driverName||'—'} · ${bus?.plate||'—'}</div>
+      </div>
+    `;
+    document.getElementById('peekTitle').textContent = '🚌 Bus on the way!';
+    document.getElementById('peekSub').textContent = `${myReq.assignedBus} dispatched to ${myReq.location}`;
+  } else {
+    const myDest = myReq.students.find(s => s.id === session.id)?.destination;
+    el.innerHTML = `
+      <div class="status-card waiting">
+        <div class="sc-head"><span class="sc-icon">⏳</span><span class="sc-title">Waiting for Queue</span></div>
+        <div class="sc-sub">At <b>${myReq.location}</b> → <b>${myDest}</b></div>
+        <div class="ring-row">
+          <div class="ring-wrap">
+            <svg width="44" height="44" viewBox="0 0 44 44">
+              <circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="4"/>
+              <circle cx="22" cy="22" r="18" fill="none" stroke="#06C167" stroke-width="4"
+                stroke-dasharray="${2*Math.PI*18}" stroke-dashoffset="${2*Math.PI*18*(1-pct/100)}" stroke-linecap="round"/>
+            </svg>
+            <div class="ring-num">${count}</div>
+          </div>
+          <div class="ring-info">
+            <div class="ring-lbl">Students in queue</div>
+            <div class="ring-val">${count} / ${MIN_STUDENTS_FOR_DISPATCH} needed</div>
+          </div>
+        </div>
+        <button class="btn-cancel" onclick="cancelRequest()">Cancel Request</button>
+      </div>
+    `;
+    document.getElementById('peekTitle').textContent = `⏳ Queuing at ${myReq.location}`;
+    document.getElementById('peekSub').textContent = `${count}/${MIN_STUDENTS_FOR_DISPATCH} students · Tap to expand`;
+  }
+}
+
+// ─── RENDER STUDENT PINS ──────────────────────────────────────────────────────
+async function renderStudentPins() {
+  const pins = await sbGetStudentPins();
+  const currentIds = new Set();
+
+  pins.forEach(pin => {
+    const sid = pin.student_id || pin.studentId;
+    const name = pin.name;
+    const lat = pin.lat;
+    const lng = pin.lng;
+    currentIds.add(sid);
+    const isMe = sid === session.id;
+
+    if (!studentPinMarkers[sid]) {
+      studentPinMarkers[sid] = L.marker([lat, lng], { icon: studentPinIcon(name, isMe), zIndexOffset: isMe ? 1000 : 0 })
+        .bindPopup(`<b>${name}</b><br>${isMe ? 'Your pinned location' : 'Looking for a bus'}`)
+        .addTo(map);
+    } else {
+      studentPinMarkers[sid].setLatLng([lat, lng]);
+      studentPinMarkers[sid].setIcon(studentPinIcon(name, isMe));
+    }
+  });
+
+  // Remove stale pins
+  Object.keys(studentPinMarkers).forEach(sid => {
+    if (!currentIds.has(sid)) { map.removeLayer(studentPinMarkers[sid]); delete studentPinMarkers[sid]; }
+  });
+}
+
+// ─── SUBMIT REQUEST ───────────────────────────────────────────────────────────
+async function submitRequest() {
+  const from = fromSel.value;
+  const to = toSel.value;
+  if (from === to) { showToast('Pickup and destination cannot be the same.', 'error'); return; }
+  document.getElementById('requestBtn').disabled = true;
+  const result = await submitRideRequest(session.id, session.name, from, to);
+  if (!result.success) { showToast(result.msg, 'error'); document.getElementById('requestBtn').disabled = false; return; }
+  showToast(result.msg, 'success');
+  renderAll();
+}
+
+function cancelRequest() {
+  const requests = getRequests();
+  for (const key of Object.keys(requests)) {
+    const idx = requests[key].students.findIndex(s => s.id === session.id);
+    if (idx !== -1) {
+      requests[key].students.splice(idx, 1);
+      if (requests[key].students.length === 0) delete requests[key];
+      saveRequests(requests);
+      break;
+    }
+  }
+  document.getElementById('requestBtn').disabled = false;
+  renderAll();
+  showToast('Request cancelled.', 'success');
+}
+
+// ─── PIN TOGGLE ───────────────────────────────────────────────────────────────
+async function togglePin() {
+  const btn = document.getElementById('pinBtn');
+  if (isPinned) {
+    // Remove pin
+    await sbRemoveStudentPin(session.id);
+    if (myPinMarker) { map.removeLayer(myPinMarker); myPinMarker = null; }
+    isPinned = false;
+    btn.innerHTML = '📍 Pin My Location on Map';
+    btn.classList.remove('pinned');
+    showToast('Your location pin removed.', 'success');
+    renderStudentPins();
+  } else {
+    // Place pin at current selection
+    const loc = OAU_LOCATIONS[fromSel.value];
+    if (!loc) { showToast('Select your location first.', 'error'); return; }
+    const pin = { student_id: session.id, name: session.name, lat: loc.lat, lng: loc.lng };
+    await sbSaveStudentPin(pin);
+    isPinned = true;
+    btn.innerHTML = '✅ Pinned — Tap to Remove';
+    btn.classList.add('pinned');
+    map.flyTo([loc.lat, loc.lng], 17);
+    showToast(`You're pinned at ${fromSel.value}. Visible to all.`, 'success');
+    renderStudentPins();
+  }
+}
+
+// Auto-remove pin after 5 min
+setInterval(async () => {
+  if (isPinned) {
+    await sbRemoveStudentPin(session.id);
+    isPinned = false;
+    document.getElementById('pinBtn').innerHTML = '📍 Pin My Location on Map';
+    document.getElementById('pinBtn').classList.remove('pinned');
+    if (myPinMarker) { map.removeLayer(myPinMarker); myPinMarker = null; }
+  }
+}, 5 * 60 * 1000);
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'success') {
+  const w = document.getElementById('toastWrap');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  const icon = type === 'success' ? '✅' : '❌';
+  t.innerHTML = `<span class="toast-icon">${icon}</span><span>${msg}</span><button class="toast-close" onclick="this.parentElement.remove()">×</button>`;
+  w.appendChild(t);
+  setTimeout(() => t.remove(), 5000);
+}
+
+// ─── RENDER ALL ───────────────────────────────────────────────────────────────
+function renderAll() {
+  renderBuses();
+  renderQueue();
+  renderMyStatus();
+  renderStudentPins();
+}
+
+// ─── REALTIME ─────────────────────────────────────────────────────────────────
+let bc2;
+try {
+  bc2 = new BroadcastChannel('oau_transit');
+  bc2.onmessage = () => renderAll();
+} catch(e){}
+
+subscribeRealtime(renderAll);
+setInterval(renderAll, 4000);
+renderAll();
+</script>
+<script src="pwa.js"></script>
+</body>
+</html>

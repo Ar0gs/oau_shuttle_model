@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="application-name" content="OAU Transit">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OAUTransit">
+<meta name="theme-color" content="#06C167" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#06C167">
+<meta name="msapplication-TileColor" content="#06C167">
+<meta name="msapplication-TileImage" content="icon-144x144.png">
+<meta name="msapplication-config" content="none">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-96x96.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192x192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icon-152x152.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192x192.png">
+<link rel="apple-touch-startup-image" href="icon-512x512.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<title>OAU Transit — Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@500;700;800;900&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --black:#080808;--surface:#0f0f0f;--card:#181818;--card2:#202020;
+  --border:rgba(255,255,255,.07);--text:#efefef;--muted:#777;--subtle:#444;
+  --green:#06C167;--green-dim:rgba(6,193,103,.12);
+  --gold:#FFB800;--gold-dim:rgba(255,184,0,.1);
+  --red:#FF4B4B;--red-dim:rgba(255,75,75,.1);
+  --blue:#4B9EFF;--blue-dim:rgba(75,158,255,.1);
+  --purple:#A78BFA;
+  --topbar:52px;
+}
+html,body{height:100%;font-family:'Outfit',sans-serif;background:var(--black);color:var(--text);overflow:hidden}
+
+/* ── TOPBAR ── */
+.topbar{position:fixed;top:0;left:0;right:0;height:var(--topbar);z-index:600;display:flex;align-items:center;padding:0 16px;gap:10px;background:rgba(8,8,8,.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+.logo{font-family:'Cabinet Grotesk',sans-serif;font-size:17px;font-weight:900;color:var(--blue)}
+.logo-dot{color:var(--text)}
+.sep{width:1px;height:18px;background:var(--border)}
+.topbar-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.live-chip{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;background:var(--red-dim);border:1px solid rgba(255,75,75,.25);font-size:10px;font-weight:700;color:var(--red);margin-left:auto}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--red);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}
+.clock{font-family:'Outfit',sans-serif;font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
+.admin-name{font-size:12px;color:var(--subtle)}
+.btn-sm{padding:6px 12px;border-radius:100px;font-family:'Outfit',sans-serif;font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--muted);transition:.2s}
+.btn-sm:hover{color:var(--text)}
+
+/* ── LAYOUT ── */
+.app{display:flex;height:100vh;padding-top:var(--topbar)}
+
+/* MAP */
+#map{flex:1;position:relative;z-index:1}
+
+/* PANEL */
+.panel{width:380px;flex-shrink:0;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;z-index:10}
+
+@media(max-width:900px){
+  .app{flex-direction:column}
+  #map{flex:none;height:55vh}
+  .panel{width:100%;flex:1;border-left:none;border-top:1px solid var(--border)}
+}
+
+/* ── MAP OVERLAYS ── */
+.stat-chips{position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:7px;z-index:200;pointer-events:none}
+.chip{background:rgba(8,8,8,.9);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:10px;padding:9px 14px;display:flex;align-items:center;gap:10px}
+.chip-icon{font-size:16px}
+.chip-val{font-family:'Cabinet Grotesk',sans-serif;font-size:20px;font-weight:900;line-height:1}
+.chip-lbl{font-size:10px;color:var(--muted);margin-top:1px}
+
+.map-controls{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:7px;z-index:200}
+.map-ctrl-btn{background:rgba(8,8,8,.88);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--muted);font-size:12px;cursor:pointer;font-family:'Outfit',sans-serif;transition:.2s;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.map-ctrl-btn:hover{background:var(--card);color:var(--text)}
+.map-ctrl-btn.active{background:var(--blue-dim);border-color:rgba(75,158,255,.3);color:var(--blue)}
+
+/* ── DISPATCH TOOLBAR ── */
+.dispatch-bar{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap}
+.dispatch-bar select{flex:1;min-width:100px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Outfit',sans-serif;font-size:13px;outline:none;cursor:pointer}
+.dispatch-bar select option{background:var(--surface)}
+.btn-dispatch{padding:9px 16px;border-radius:10px;background:var(--green);color:#000;font-family:'Cabinet Grotesk',sans-serif;font-size:14px;font-weight:800;border:none;cursor:pointer;transition:.2s;white-space:nowrap}
+.btn-dispatch:hover{background:#08e07a}
+
+/* ── TABS ── */
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--surface)}
+.tab{flex:1;padding:11px 8px;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;text-align:center;border-bottom:2px solid transparent;transition:.2s;background:none;border-top:none;border-left:none;border-right:none;font-family:'Outfit',sans-serif}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab:hover:not(.active){color:var(--text)}
+.tab-content{flex:1;overflow-y:auto;display:none}
+.tab-content.active{display:block}
+
+/* ── BUS CARDS ── */
+.bus-card{margin:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.bc-head{padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+.bc-id{font-family:'Cabinet Grotesk',sans-serif;font-size:16px;font-weight:900}
+.bc-pill{padding:3px 10px;border-radius:100px;font-size:10px;font-weight:700;border:1px solid}
+.bc-pill.idle{background:var(--green-dim);color:var(--green);border-color:rgba(6,193,103,.25)}
+.bc-pill.en_route_pickup{background:var(--gold-dim);color:var(--gold);border-color:rgba(255,184,0,.25)}
+.bc-pill.en_route_delivery{background:var(--blue-dim);color:var(--blue);border-color:rgba(75,158,255,.25)}
+.bc-pill.offline{background:rgba(255,255,255,.04);color:var(--muted);border-color:var(--border)}
+.bc-body{padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mini{background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:10px;text-align:center}
+.mini-val{font-family:'Cabinet Grotesk',sans-serif;font-size:18px;font-weight:900}
+.mini-lbl{font-size:10px;color:var(--muted);margin-top:1px}
+.bc-foot{padding:10px 14px;display:flex;gap:7px;border-top:1px solid var(--border)}
+.bc-btn{padding:7px 12px;border-radius:8px;font-family:'Outfit',sans-serif;font-size:12px;cursor:pointer;border:1px solid;transition:.2s}
+.bc-btn.locate{background:var(--blue-dim);color:var(--blue);border-color:rgba(75,158,255,.25)}
+.bc-btn.locate:hover{background:var(--blue);color:#fff}
+.bc-btn.idle-btn{background:var(--red-dim);color:var(--red);border-color:rgba(255,75,75,.25)}
+.bc-btn.idle-btn:hover{background:var(--red);color:#fff}
+.bc-coord{font-size:10px;color:var(--subtle);padding-top:4px;margin-left:auto;font-variant-numeric:tabular-nums}
+
+/* ── REQUEST ITEMS ── */
+.req-item{margin:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.ri-head{padding:11px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+.ri-loc{font-family:'Cabinet Grotesk',sans-serif;font-size:15px;font-weight:800}
+.ri-body{padding:12px 14px}
+.ri-detail{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.55}
+.ri-students{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.student-chip{padding:2px 8px;background:var(--card2);border:1px solid var(--border);border-radius:100px;font-size:11px;color:var(--muted)}
+.progress-track{height:3px;background:var(--border);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px;transition:width .5s}
+.ri-foot{padding:9px 14px;display:flex;gap:7px;border-top:1px solid var(--border)}
+.ri-btn{padding:8px 14px;border-radius:8px;font-family:'Outfit',sans-serif;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:.2s}
+.ri-btn.go{background:var(--green);color:#000}
+.ri-btn.go:hover{background:#08e07a}
+.ri-btn.dismiss{background:var(--card2);color:var(--muted);border:1px solid var(--border)}
+.ri-btn.dismiss:hover{color:var(--text)}
+
+/* ── STATS ── */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
+.stat-card-val{font-family:'Cabinet Grotesk',sans-serif;font-size:30px;font-weight:900;line-height:1;margin-bottom:4px}
+.stat-card-lbl{font-size:11px;color:var(--muted)}
+.act-list{padding:0 12px 12px}
+.act-item{display:flex;gap:8px;padding:9px 12px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;font-size:12px}
+.act-time{color:var(--subtle);min-width:44px;font-variant-numeric:tabular-nums;flex-shrink:0}
+.act-msg{color:var(--muted);flex:1}
+.reset-row{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
+.reset-btn{flex:1;padding:10px;border-radius:10px;background:var(--card);border:1px solid var(--border);color:var(--muted);font-family:'Outfit',sans-serif;font-size:13px;cursor:pointer;transition:.2s}
+.reset-btn:hover{color:var(--red);border-color:rgba(255,75,75,.3)}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(10px);z-index:900;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px;max-width:380px;width:100%;animation:modalIn .25s cubic-bezier(.34,1.56,.64,1)}
+@keyframes modalIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+.modal h3{font-family:'Cabinet Grotesk',sans-serif;font-size:22px;font-weight:900;margin-bottom:6px}
+.modal p{font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6}
+.modal select{width:100%;padding:11px 14px;background:var(--card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Outfit',sans-serif;font-size:14px;outline:none;margin-bottom:12px}
+.modal select option{background:var(--surface)}
+.modal-btns{display:flex;gap:8px;margin-top:20px}
+.modal-btn{flex:1;padding:12px;border-radius:100px;font-family:'Cabinet Grotesk',sans-serif;font-size:14px;font-weight:800;cursor:pointer;border:none;transition:.2s}
+.modal-btn.confirm{background:var(--green);color:#000}
+.modal-btn.confirm:hover{background:#08e07a}
+.modal-btn.cancel{background:var(--card);color:var(--muted);border:1px solid var(--border)}
+.modal-btn.cancel:hover{color:var(--text)}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="backend.js"></script>
+
+<div class="topbar">
+  <div class="logo">OAU<span class="logo-dot">Transit</span></div>
+  <div class="sep"></div>
+  <div class="topbar-title">Admin Control Center</div>
+  <div class="live-chip"><div class="live-dot"></div>LIVE</div>
+  <div class="clock" id="clock">--:--</div>
+  <div class="admin-name" id="adminName">Loading…</div>
+  <button class="btn-sm" onclick="logout()">Sign Out</button>
+</div>
+
+<div class="app">
+  <!-- MAP -->
+  <div id="map" style="position:relative">
+    <div class="stat-chips">
+      <div class="chip">
+        <div class="chip-icon">🚌</div>
+        <div><div class="chip-val" id="ov-buses">4</div><div class="chip-lbl">Active Buses</div></div>
+      </div>
+      <div class="chip">
+        <div class="chip-icon">👥</div>
+        <div><div class="chip-val" id="ov-students">0</div><div class="chip-lbl">Waiting Now</div></div>
+      </div>
+      <div class="chip">
+        <div class="chip-icon">📍</div>
+        <div><div class="chip-val" id="ov-pins">0</div><div class="chip-lbl">Student Pins</div></div>
+      </div>
+    </div>
+    <div class="map-controls">
+      <button class="map-ctrl-btn active" id="btnBuses" onclick="toggleLayer('buses')">🚌 Buses</button>
+      <button class="map-ctrl-btn active" id="btnRequests" onclick="toggleLayer('requests')">📍 Queues</button>
+      <button class="map-ctrl-btn active" id="btnPins" onclick="toggleLayer('pins')">🔵 Student Pins</button>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="panel">
+    <!-- Manual Dispatch Toolbar -->
+    <div class="dispatch-bar">
+      <select id="ctrlBus"><option value="">Select Bus…</option></select>
+      <select id="ctrlDest">
+        <option value="">Select Destination…</option>
+        ${Object.keys(OAU_LOCATIONS||{}).length===0?'':Object.entries(OAU_LOCATIONS||{}).map(([n,l])=>`<option value="${n}">${l.icon} ${n}</option>`).join('')}
+      </select>
+      <button class="btn-dispatch" onclick="manualDispatch()">Dispatch →</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('buses')">Buses</button>
+      <button class="tab" onclick="switchTab('requests')">Requests</button>
+      <button class="tab" onclick="switchTab('stats')">Analytics</button>
+    </div>
+
+    <div class="tab-content active" id="tab-buses"></div>
+    <div class="tab-content" id="tab-requests"></div>
+    <div class="tab-content" id="tab-stats"></div>
+  </div>
+</div>
+
+<!-- DISPATCH CONFIRM MODAL -->
+<div class="modal-overlay" id="dispatchModal">
+  <div class="modal">
+    <h3>Confirm Dispatch</h3>
+    <p id="dispatchInfo">Dispatching bus…</p>
+    <div class="modal-btns">
+      <button class="modal-btn confirm" onclick="confirmDispatch()">✅ Confirm</button>
+      <button class="modal-btn cancel" onclick="closeDispatch()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const session = requireSession('admin');
+document.getElementById('adminName').textContent = session.name;
+
+// Clock
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}, 1000);
+
+// ─── MAP ─────────────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  center:[7.5177,4.5260], zoom:15,
+  zoomControl:false, attributionControl:false
+});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+L.control.zoom({position:'bottomright'}).addTo(map);
+map.fitBounds([[7.508,4.515],[7.526,4.535]]);
+
+// Campus stops
+LOCATION_NAMES.forEach(name=>{
+  const loc=OAU_LOCATIONS[name];
+  L.marker([loc.lat,loc.lng],{
+    icon:L.divIcon({
+      html:`<div style="font-size:20px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.8))">${loc.icon}</div>`,
+      iconSize:[24,24],iconAnchor:[12,12],className:''
+    })
+  }).bindTooltip(name,{permanent:false,direction:'top'}).addTo(map);
+});
+
+const busMarkers={};
+const reqMarkers={};
+const pinMarkers={};
+const layers={buses:true,requests:true,pins:true};
+
+function toggleLayer(l){
+  layers[l]=!layers[l];
+  document.getElementById('btn'+l.charAt(0).toUpperCase()+l.slice(1)).classList.toggle('active',layers[l]);
+  renderMap();
+}
+
+// ─── POPULATE SELECTS ─────────────────────────────────────────────────────────
+function populateSelects(){
+  const buses=getBuses();
+  const busSelect=document.getElementById('ctrlBus');
+  busSelect.innerHTML='<option value="">Select Bus…</option>';
+  Object.keys(buses).forEach(id=>{
+    busSelect.add(new Option(id,id));
+  });
+  const destSelect=document.getElementById('ctrlDest');
+  destSelect.innerHTML='<option value="">Select Destination…</option>';
+  LOCATION_NAMES.forEach(n=>{
+    destSelect.add(new Option(`${OAU_LOCATIONS[n].icon} ${n}`,n));
+  });
+}
+
+// ─── RENDER MAP ───────────────────────────────────────────────────────────────
+async function renderMap(){
+  const buses=getBuses();
+  const requests=getRequests();
+
+  // Buses
+  Object.values(buses).forEach(bus=>{
+    const colors={idle:'#888',en_route_pickup:'#FFB800',en_route_delivery:'#06C167',offline:'#333'};
+    const color=colors[bus.status]||'#888';
+    const pulse=bus.status!=='idle'&&bus.status!=='offline';
+    const icon=L.divIcon({
+      html:`<div style="width:40px;height:40px;border-radius:50%;background:${color};border:2.5px solid rgba(255,255,255,.9);display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 0 0 ${pulse?'7px':'0'} ${color}35,0 4px 16px rgba(0,0,0,.5);transition:all .4s">🚌</div>`,
+      iconSize:[40,40],iconAnchor:[20,20],className:''
+    });
+    if(!busMarkers[bus.id]){
+      busMarkers[bus.id]=L.marker([bus.lat,bus.lng],{icon}).bindPopup(`<b>${bus.id}</b><br>${bus.driverName}<br>${bus.plate}<br>Status: ${bus.status}`).addTo(map);
+    } else {
+      busMarkers[bus.id].setLatLng([bus.lat,bus.lng]);
+      busMarkers[bus.id].setIcon(icon);
+    }
+    if(!layers.buses)map.removeLayer(busMarkers[bus.id]); else busMarkers[bus.id].addTo(map);
+  });
+
+  // Requests
+  Object.values(requests).filter(r=>r.status!=='completed').forEach(req=>{
+    const count=req.students.length;
+    const pct=count/MIN_STUDENTS_FOR_DISPATCH;
+    const color=req.status==='dispatched'?'#06C167':pct>=1?'#06C167':pct>=.5?'#FFB800':'#FF4B4B';
+    const icon=L.divIcon({
+      html:`<div style="min-width:30px;height:30px;border-radius:15px;padding:0 9px;background:${color};color:#000;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;box-shadow:0 0 0 5px ${color}25,0 4px 14px rgba(0,0,0,.5);font-family:'Cabinet Grotesk',sans-serif;white-space:nowrap">${count}/${MIN_STUDENTS_FOR_DISPATCH}</div>`,
+      iconSize:null,iconAnchor:[15,15],className:''
+    });
+    if(req.coords){
+      if(!reqMarkers[req.location]){
+        reqMarkers[req.location]=L.marker([req.coords.lat,req.coords.lng],{icon}).bindPopup(`<b>${req.location}</b><br>${count} students → ${req.students[0]?.destination||''}`).addTo(map);
+      } else {
+        reqMarkers[req.location].setIcon(icon);
+        reqMarkers[req.location].setLatLng([req.coords.lat,req.coords.lng]);
+      }
+      if(!layers.requests)map.removeLayer(reqMarkers[req.location]); else reqMarkers[req.location].addTo(map);
+    }
+  });
+
+  // Student pins
+  try{
+    const pins=await sbGetStudentPins();
+    const ids=new Set();
+    let pinCount=0;
+    pins.forEach(pin=>{
+      const sid=pin.student_id||pin.studentId;
+      ids.add(sid); pinCount++;
+      if(!pinMarkers[sid]){
+        pinMarkers[sid]=L.marker([pin.lat,pin.lng],{
+          icon:L.divIcon({
+            html:`<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+              <div style="width:10px;height:10px;border-radius:50%;background:#4B9EFF;border:2px solid rgba(255,255,255,.9);box-shadow:0 0 0 4px rgba(75,158,255,.2)"></div>
+              <div style="background:rgba(8,8,8,.9);color:#4B9EFF;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;border:1px solid rgba(75,158,255,.3);white-space:nowrap;font-family:'Outfit',sans-serif">${(pin.name||'').split(' ')[0]}</div>
+            </div>`,
+            iconSize:null,iconAnchor:[5,5],className:''
+          })
+        }).bindPopup(`<b>${pin.name}</b><br>Looking for a bus at this location`).addTo(map);
+      } else { pinMarkers[sid].setLatLng([pin.lat,pin.lng]); }
+      if(!layers.pins)map.removeLayer(pinMarkers[sid]); else pinMarkers[sid].addTo(map);
+    });
+    Object.keys(pinMarkers).forEach(sid=>{
+      if(!ids.has(sid)){map.removeLayer(pinMarkers[sid]);delete pinMarkers[sid];}
+    });
+    document.getElementById('ov-pins').textContent=pinCount;
+  } catch {}
+
+  // Stats chips
+  const buses=getBuses();
+  const active=Object.values(buses).filter(b=>b.status!=='offline').length;
+  document.getElementById('ov-buses').textContent=active;
+  const waiting=Object.values(requests).filter(r=>r.status!=='completed').reduce((a,r)=>a+r.students.length,0);
+  document.getElementById('ov-students').textContent=waiting;
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────────────────
+let activeTab='buses';
+function switchTab(t){
+  activeTab=t;
+  document.querySelectorAll('.tab').forEach((el,i)=>{
+    el.classList.toggle('active',['buses','requests','stats'][i]===t);
+  });
+  document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+t).classList.add('active');
+}
+
+// ─── BUSES TAB ────────────────────────────────────────────────────────────────
+function renderBusesTab(){
+  const buses=getBuses();
+  const el=document.getElementById('tab-buses');
+  el.innerHTML=Object.values(buses).map(bus=>{
+    const statusLabels={idle:'Available',en_route_pickup:'Picking Up',en_route_delivery:'Delivering',offline:'Offline'};
+    return `
+    <div class="bus-card">
+      <div class="bc-head">
+        <div class="bc-id">${bus.id}</div>
+        <div class="bc-pill ${bus.status}">${statusLabels[bus.status]||bus.status}</div>
+      </div>
+      <div class="bc-body">
+        <div class="mini"><div class="mini-val">${bus.plate}</div><div class="mini-lbl">Plate</div></div>
+        <div class="mini"><div class="mini-val">${bus.passengers||0}</div><div class="mini-lbl">Passengers</div></div>
+        <div class="mini" style="grid-column:1/-1;text-align:left;padding:10px 12px">
+          <div style="font-size:11px;color:var(--muted)">Driver</div>
+          <div style="font-size:13px;font-weight:500;margin-top:2px">${bus.driverName||'—'}</div>
+          ${bus.currentTrip?`<div style="font-size:11px;color:var(--muted);margin-top:2px">→ ${bus.currentTrip}</div>`:''}
+        </div>
+      </div>
+      <div class="bc-foot">
+        <button class="bc-btn locate" onclick="zoomToBus('${bus.id}')">📍 Locate</button>
+        ${bus.status!=='idle'&&bus.status!=='offline'?`<button class="bc-btn idle-btn" onclick="forceIdle('${bus.id}')">⚠ Force Idle</button>`:''}
+        <span class="bc-coord">${bus.lat.toFixed(4)}, ${bus.lng.toFixed(4)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── REQUESTS TAB ─────────────────────────────────────────────────────────────
+function renderRequestsTab(){
+  const requests=getRequests();
+  const el=document.getElementById('tab-requests');
+  const all=Object.values(requests);
+  if(!all.length){el.innerHTML=`<div style="padding:20px;font-size:13px;color:var(--muted)">No active ride requests on campus.</div>`;return;}
+  el.innerHTML=all.map(req=>{
+    const pct=Math.min(req.students.length/MIN_STUDENTS_FOR_DISPATCH,1)*100;
+    const c=req.status==='dispatched'||req.status==='delivering'?'#06C167':pct>=70?'#FFB800':'#FF4B4B';
+    const label={waiting:'Waiting',pending_bus:'Needs Bus',dispatched:'Bus Assigned',delivering:'En Route',completed:'Completed'}[req.status]||req.status;
+    const pillClass={dispatched:'idle',delivering:'idle',waiting:'en_route_pickup',pending_bus:'en_route_pickup',completed:'offline'}[req.status]||'offline';
+    return `
+    <div class="req-item">
+      <div class="ri-head">
+        <div class="ri-loc">${OAU_LOCATIONS[req.location]?.icon||''} ${req.location}</div>
+        <div class="bc-pill ${pillClass}">${label}</div>
+      </div>
+      <div class="ri-body">
+        <div class="ri-detail">
+          👥 ${req.students.length} students · → ${req.students[0]?.destination||'Various'}<br>
+          🕐 ${new Date(req.createdAt).toLocaleTimeString()}<br>
+          ${req.assignedBus?`🚌 Bus: ${req.assignedBus}`:''}
+        </div>
+        <div class="ri-students">${req.students.slice(0,5).map(s=>`<div class="student-chip">${s.name}</div>`).join('')}${req.students.length>5?`<div class="student-chip">+${req.students.length-5}</div>`:''}</div>
+        <div class="progress-track"><div class="progress-fill" style="width:${pct}%;background:${c}"></div></div>
+      </div>
+      ${req.status==='waiting'||req.status==='pending_bus'?`
+      <div class="ri-foot">
+        <button class="ri-btn go" onclick="adminDispatch('${req.location}')">🚀 Dispatch Bus</button>
+        <button class="ri-btn dismiss" onclick="adminDismiss('${req.location}')">Dismiss</button>
+      </div>`:''
+      }
+    </div>`;
+  }).join('');
+}
+
+// ─── STATS TAB ────────────────────────────────────────────────────────────────
+function renderStatsTab(){
+  const stats=getStats();
+  const buses=getBuses();
+  const requests=getRequests();
+  const idle=Object.values(buses).filter(b=>b.status==='idle').length;
+  const pending=Object.values(requests).filter(r=>r.status!=='completed').length;
+  const el=document.getElementById('tab-stats');
+  el.innerHTML=`
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-card-val" style="color:var(--green)">${stats.studentsServed}</div><div class="stat-card-lbl">Students Served</div></div>
+      <div class="stat-card"><div class="stat-card-val" style="color:var(--blue)">${stats.tripsCompleted}</div><div class="stat-card-lbl">Trips Completed</div></div>
+      <div class="stat-card"><div class="stat-card-val" style="color:var(--gold)">${idle}</div><div class="stat-card-lbl">Buses Available</div></div>
+      <div class="stat-card"><div class="stat-card-val" style="color:var(--red)">${pending}</div><div class="stat-card-lbl">Pending Requests</div></div>
+    </div>
+    <div style="padding:0 12px 8px;font-size:11px;color:var(--subtle);text-transform:uppercase;letter-spacing:.08em">Recent Activity</div>
+    <div class="act-list" id="actList"></div>
+    <div class="reset-row">
+      <button class="reset-btn" onclick="if(confirm('Reset all requests?'))resetRequests()">Reset Requests</button>
+      <button class="reset-btn" onclick="if(confirm('Reset stats?'))resetStats()">Reset Stats</button>
+    </div>
+  `;
+  const trips=getTrips();
+  const al=document.getElementById('actList');
+  if(!trips.length){al.innerHTML=`<div style="font-size:13px;color:var(--muted)">No activity yet.</div>`;return;}
+  al.innerHTML=trips.slice(0,25).map(t=>`
+    <div class="act-item">
+      <span class="act-time">${t.time}</span>
+      <span class="act-msg">${t.busId} · ${t.from}→${t.to} · ${t.students} students · ${t.status}</span>
+    </div>
+  `).join('');
+}
+
+// ─── ADMIN ACTIONS ────────────────────────────────────────────────────────────
+function adminDispatch(location){ autoDispatch(location); addAdminLog(`Dispatched bus to ${location}`); renderAll(); }
+function adminDismiss(location){
+  const r=getRequests();if(r[location]){r[location].status='completed';saveRequests(r);}
+  renderAll();
+}
+function forceIdle(busId){ setBusStatus(busId,'idle',{passengers:0,currentTrip:null,destination:null}); addAdminLog(`Forced ${busId} to idle`); renderAll(); }
+function zoomToBus(busId){ const b=getBuses();if(b[busId])map.flyTo([b[busId].lat,b[busId].lng],17); }
+
+let pendingDispatch=null;
+function manualDispatch(){
+  const busId=document.getElementById('ctrlBus').value;
+  const dest=document.getElementById('ctrlDest').value;
+  if(!busId||!dest){alert('Select both a bus and destination.');return;}
+  pendingDispatch={busId,dest};
+  document.getElementById('dispatchInfo').textContent=`Send ${busId} to ${dest}?`;
+  document.getElementById('dispatchModal').classList.add('open');
+}
+function confirmDispatch(){
+  if(!pendingDispatch)return;
+  const {busId,dest}=pendingDispatch;
+  const loc=OAU_LOCATIONS[dest];
+  setBusStatus(busId,'en_route_pickup',{currentTrip:dest,destination:dest,destinationCoords:loc,tripStudents:0});
+  logTrip({busId,from:'Admin',to:dest,students:0,status:'manual dispatch'});
+  addAdminLog(`Manually sent ${busId} to ${dest}`);
+  closeDispatch(); renderAll();
+}
+function closeDispatch(){ document.getElementById('dispatchModal').classList.remove('open'); pendingDispatch=null; }
+
+function resetRequests(){ setDB('oau_requests',{}); renderAll(); }
+function resetStats(){ setDB('oau_stats',{studentsServed:0,tripsCompleted:0}); setDB('oau_trips',[]); renderAll(); }
+function addAdminLog(msg){ logTrip({busId:'ADMIN',from:'–',to:'–',students:0,status:msg}); }
+
+// ─── RENDER ALL ───────────────────────────────────────────────────────────────
+function renderAll(){
+  renderMap();
+  if(activeTab==='buses')renderBusesTab();
+  else if(activeTab==='requests')renderRequestsTab();
+  else renderStatsTab();
+  populateSelects();
+}
+
+// ─── REALTIME ─────────────────────────────────────────────────────────────────
+let bc2;
+try{bc2=new BroadcastChannel('oau_transit');bc2.onmessage=()=>renderAll();}catch(e){}
+subscribeRealtime(renderAll);
+setInterval(renderAll,3000);
+renderAll();
+</script>
+<script src="pwa.js"></script>
+</body>
+</html>
