@@ -307,23 +307,36 @@
     let pill = document.getElementById('pwa-offline-pill');
     if (!pill) pill = createOfflinePill();
 
-    function update() {
-      if (navigator.onLine) {
-        pill.classList.remove('visible');
-      } else {
-        pill.classList.add('visible');
-      }
+    async function probeNetwork() {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 3000);
+        await fetch('https://www.gstatic.com/generate_204', {
+          method: 'HEAD', mode: 'no-cors', cache: 'no-store', signal: ctrl.signal
+        });
+        clearTimeout(t);
+        return true;
+      } catch { return false; }
+    }
+
+    async function update(probe = false) {
+      if (!navigator.onLine) { pill.classList.add('visible'); return; }
+      if (probe) {
+        const online = await probeNetwork();
+        if (online) {
+          pill.classList.remove('visible');
+          if (typeof syncFromSupabase === 'function') syncFromSupabase();
+        } else { pill.classList.add('visible'); }
+      } else { pill.classList.remove('visible'); }
     }
 
     window.addEventListener('online', () => {
-      update();
-      // Trigger background sync when back online
-      if (swRegistration?.sync) {
-        swRegistration.sync.register('sync-ride-requests').catch(() => {});
-      }
+      update(true);
+      if (swRegistration?.sync) swRegistration.sync.register('sync-ride-requests').catch(() => {});
     });
-    window.addEventListener('offline', update);
-    update(); // run once immediately
+    window.addEventListener('offline', () => update(false));
+    // Only show on load if browser already knows we're offline
+    if (!navigator.onLine) pill.classList.add('visible');
   }
 
   // ── Service Worker Registration ────────────────────────────────────────────
